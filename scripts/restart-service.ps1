@@ -8,7 +8,7 @@
 # 所以停服务之后必须先按端口清掉孤儿（连带它起的 pi --mode rpc 子进程），再 start。
 # 注意：这会杀掉当前 pi 会话（会话就是网关起的子进程），跑之前先跟手机上的人说一声，
 # 或者用 -DelaySec 排一次延迟重启。
-param([int]$DelaySec = 0)
+param([int]$DelaySec = 0, [switch]$NoNotify)
 $ErrorActionPreference = 'SilentlyContinue'
 Set-Location (Split-Path -Parent $PSScriptRoot)
 
@@ -19,7 +19,16 @@ function Say($m) {
     Add-Content -Path $log -Value $line
 }
 
+# 通知必须由**这个进程**发：网关被 stop 之后自己就发不出来了（2026-11-17 事故：手机上只看到连接断了，
+# 没有任何提示，因为通知出口在被杀掉的那个进程里）。
+function Notify($title, $body) {
+    if ($NoNotify) { Say "notify 跳过（-NoNotify）: $title"; return }
+    node (Join-Path $PWD 'scripts\notify-once.mjs') $title $body 'gateway_restart' 2>&1 | ForEach-Object { Say "notify: $_" }
+}
+
 if ($DelaySec -gt 0) { Say "等待 $DelaySec 秒后重启（让当前会话的回复先送达手机）"; Start-Sleep -Seconds $DelaySec }
+
+Notify 'pi 网关即将重启' "网关会在约 10 秒内停止并重新起来（约 15 秒后恢复）。当时正在生成的那条回答会被掐断，看不到结尾 —— 这不是崩溃，重启完直接发新消息就能接着用。"
 
 Say "=== restart-service 开始"
 sc.exe stop pi-gateway 2>&1 | ForEach-Object { Say "stop: $_" }
@@ -61,4 +70,5 @@ try {
 } catch {
     Say "pages probe: HTTP $($_.Exception.Response.StatusCode.value__)（401=新路由生效；404=还是旧代码）"
 }
+Notify 'pi 网关重启完成' "pi-gateway 服务已恢复，可以发消息了。若刚才那条回答没发完，直接补一句让我继续即可。"
 Say "=== restart-service 结束"
