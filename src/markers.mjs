@@ -68,6 +68,24 @@ export function findSessionMarker(text) {
 	return target || null;
 }
 
+/**
+ * 页面标记 -> {path, title}。没有标记返回 null。
+ * 写法：[[PI_PAGE:C:/path/to/page.html|标题]]（标题可省）。
+ * 同样要求独占一行、不在代码里：文档/教程里写的示例不会被真的发布。
+ */
+export function findPageMarker(text) {
+	if (!String(text ?? '').includes('PI_PAGE')) return null;
+	const found = lastStandaloneMarker(text, 'PI_PAGE');
+	if (!found || !found.payload) return { path: null, title: null, ignoredInline: true };
+	const parts = found.payload.split('|');
+	const p = (parts[0] ?? '').trim();
+	const title = parts.slice(1).join('|').trim();
+	if (!p) return { path: null, title: null, ignoredInline: true };
+	// 命中本身就说明这行是独占的，所以 ignoredInline=false；
+	// lastStandaloneMarker 的 sawAnywhere 对命中行也算 true，直接透传会误报「被忽略过」。
+	return { path: p, title: title || null, ignoredInline: false };
+}
+
 /** 正文里出现过标记字样但没被采纳，返回一行可读日志；否则 null。 */
 export function ignoredMarkerHint(text, name) {
 	const t = String(text ?? '');

@@ -15,6 +15,7 @@ export const CLIENT_MSG = {
 	CronRunNow: 'cron_run', // {cronId}
 	SkillRun: 'skill_run', // {name, args?}
 	SkillList: 'skill_list',
+	PageList: 'page_list', // 已发布页面列表（skill 生成的 HTML 单页）
 	SessionList: 'session_list',
 	SessionSwitch: 'session_switch', // {sessionId|null (=绑定入口会话)}
 	SessionNew: 'session_new',
@@ -55,6 +56,7 @@ export const GW_EVENT = {
 	ApprovalResolved: 'approval_resolved', // {id,value}
 	ModelChanged: 'model_changed',
 	Notice: 'notice', // {level,text}
+	PageReady: 'page_ready', // {name,url,title,bytes,at} 本机 HTML 页面已发到手机上
 };
 
 export class RingBuffer {

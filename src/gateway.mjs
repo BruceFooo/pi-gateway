@@ -6,7 +6,7 @@ import path from 'node:path';
 import { PiRpc } from './pi-rpc.mjs';
 import { RunQueue } from './scheduler.mjs';
 import { RingBuffer, PROTOCOL_VERSION, CLIENT_MSG, SERVER_MSG, GW_EVENT, parseJson } from './protocol.mjs';
-import { findConfirmMarker, findSessionMarker, ignoredMarkerHint } from './markers.mjs';
+import { findConfirmMarker, findSessionMarker, findPageMarker, ignoredMarkerHint } from './markers.mjs';
 import { STATE_DIR } from './paths.mjs';
 
 const ENTRY_SESSION_NAME = '手机控制台';
@@ -22,17 +22,21 @@ const ENTRY_BRIEF = [
 	'   在回复最后一行单独输出标记：[[PI_CONFIRM:问题|选项A|选项B]]（给 2-4 个选项，用 | 分隔；不给选项就是自由输入）。',
 	'   网关会弹卡片 + 推企业微信；用户回答后会自动排一轮新任务把答案告诉你，所以你这一轮输出完标记就收尾。',
 	'4. 长任务请阶段性汇报进度，方便手机端与微信通知展示。',
-	'5. 讲解/记录这套标记协议时（写文档、教程、给用户的说明），绝不要原样写出标记本身——网关会把它当成真请求执行。',
+	'5. 本机生成或修改了 HTML 页面（例如 answer-me-with-html 生成的解释页）、需要手机打开时，在回复最后一行单独输出标记：',
+	'   [[PI_PAGE:<html 文件绝对路径>|页面标题]]。网关会把那个文件发到手机上（手机页面会出现「打开」按钮），你不需要自己架 HTTP 服务。',
+	'   只能发布本机自己生成的 HTML；第三方的 HTML 不要发布（同源执行脚本）。',
+	'6. 讲解/记录这套标记协议时（写文档、教程、给用户的说明），绝不要原样写出标记本身——网关会把它当成真请求执行。',
 	'   要举例就换成非触发的写法（例如「PI_CONFIRM(问题|选项)」），或者放在代码块里：只有独占一行、且不在代码块/行内代码里的标记才会生效。',
 ].join('\n');
 
 export class Gateway {
-	constructor({ config, log, sessions, notifier, mediaDir, saveImage }) {
+	constructor({ config, log, sessions, notifier, mediaDir, pages, saveImage }) {
 		this.config = config;
 		this.log = log;
 		this.sessions = sessions;
 		this.notifier = notifier;
 		this.mediaDir = mediaDir;
+		this.pages = pages;
 		this.saveImage = saveImage;
 
 		this.clients = new Set();
@@ -200,6 +204,8 @@ export class Gateway {
 					return this.#skillList(id);
 				case CLIENT_MSG.SkillRun:
 					return this.#skillRun(id, msg);
+				case CLIENT_MSG.PageList:
+					return this.#respond(conn, id, true, { pages: this.pages.list() });
 				case CLIENT_MSG.SessionList:
 					return this.#respond(conn, id, true, { bound: this.boundSessionId(), active: this.activeSession?.id ?? null, sessions: this.sessions.list().map((s) => ({ sessionId: s.sessionId, title: s.title, cwd: s.cwd, createdAt: s.createdAt, lastActiveAt: s.lastActiveAt ?? null, active: s.path === this.activeSession?.file, bound: s.path === this.boundSessionFile, parentSession: s.parentSession ?? null })) });
 				case CLIENT_MSG.SessionTranscript:
@@ -537,6 +543,7 @@ export class Gateway {
 				break;
 			case 'agent_settled':
 				this.#flushText(null, true);
+				this.#scanPageMarker();
 				this.#scanConfirmMarker();
 				this.runState = this.approvals.size ? 'waiting_approval' : 'idle';
 				this.#emit(GW_EVENT.AgentSettled, { aborted: !!rec.aborted, state: this.clientState() });
@@ -585,6 +592,28 @@ export class Gateway {
 	}
 
 	// ---------- 模型主动发起的确认（[[PI_CONFIRM:问题|选项A|选项B]]）----------
+
+	// 页面标记：模型写完一个本机 HTML 页后单独一行写 [[PI_PAGE:<绝对路径>|标题]]，
+	// 网关把文件发进 pages/ 并推 page_ready，手机页面就出现「打开」按钮。
+	// 必须在 #scanConfirmMarker() 之前调（那个会清空 runText）。
+	#scanPageMarker() {
+		const hit = findPageMarker(this.runText);
+		if (!hit) return;
+		if (!hit.path) {
+			if (hit.ignoredInline) this.log('[pages] 检测到 PI_PAGE，但标记没有独占一行（或写在代码里），已忽略');
+			return;
+		}
+		let page;
+		try {
+			page = this.pages.publish(hit.path, hit.title);
+		} catch (err) {
+			this.log(`[pages] 发布失败：${err?.message}`);
+			this.#emit(GW_EVENT.Notice, { level: 'warn', text: `页面发布失败：${err?.message}` });
+			return;
+		}
+		this.log(`[pages] 已发布 ${page.name}（${(page.bytes / 1024).toFixed(0)}KB）<- ${page.source}`);
+		this.#emit(GW_EVENT.PageReady, page);
+	}
 
 	#scanConfirmMarker() {
 		const text = this.runText;

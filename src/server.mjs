@@ -1,15 +1,16 @@
-// 对外接口层：/healthz、/pi/ws（WebSocket）、/pi/media（图片）。
+// 对外接口层：/healthz、/pi/ws（WebSocket）、/pi/media（图片）、/pi/pages（本机 skill 生成的 HTML 页）。
 // 只监听 127.0.0.1，由 nginx + frp 暴露到公网。
 
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { timingSafeEqual } from 'node:crypto';
-import { PKG_ROOT, STATE_DIR, MEDIA_DIR } from './paths.mjs';
+import { PKG_ROOT, STATE_DIR, MEDIA_DIR, PAGES_DIR } from './paths.mjs';
 import { acceptUpgrade, CLOSE_POLICY } from './ws.mjs';
 import { Gateway } from './gateway.mjs';
 import { SessionStore } from './session.mjs';
 import { Notifier } from './notify.mjs';
+import { PageStore } from './pages.mjs';
 
 const MEDIA_ALLOWED_MIME = new Map([
 	['image/png', 'png'],
@@ -120,6 +121,8 @@ export function createServer({ config, log }) {
 		maxImageBytes: config.maxImageBytes,
 		maxImagesPerMessage: config.maxImagesPerMessage,
 	});
+	// 页面发布：pages/ 也在包根下（已在 .gitignore）。只发本机自己生成的 HTML。
+	const pages = new PageStore({ dir: PAGES_DIR, log, maxPageBytes: config.maxPageBytes ?? 2 * 1024 * 1024 });
 	const sessions = new SessionStore({ dir: config.sessionsDir, log });
 	const notifier = new Notifier({ ...config.notify, log });
 	const gateway = new Gateway({
@@ -128,6 +131,7 @@ export function createServer({ config, log }) {
 		sessions,
 		notifier,
 		mediaDir: MEDIA_DIR,
+		pages,
 		saveImage: (mime, b64) => media.save(mime, b64),
 	});
 
@@ -161,6 +165,31 @@ export function createServer({ config, log }) {
 			const ext = path.extname(full).slice(1).toLowerCase();
 			const mime = [...MEDIA_ALLOWED_MIME.entries()].find(([, e]) => e === ext)?.[0] ?? 'application/octet-stream';
 			res.writeHead(200, { 'content-type': mime, 'cache-control': 'private, max-age=86400' });
+			fs.createReadStream(full).pipe(res);
+			return;
+		}
+		if (req.method === 'GET' && url.pathname.startsWith('/pi/pages/')) {
+			// 页面与本控制台同源（手机只信这一个域名），所以能直接跑脚本；
+			// 代价是只能放本机自己生成的 HTML，不能拿它代理第三方页面。
+			if (!tokenOk(url.searchParams.get('token') ?? req.headers['x-pi-token'], config.token)) {
+				res.writeHead(401, { 'content-type': 'text/plain; charset=utf-8' });
+				res.end('unauthorized');
+				return;
+			}
+			const full = pages.resolve(url.pathname.slice('/pi/pages/'.length));
+			if (!full) {
+				res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
+				res.end('not found');
+				return;
+			}
+			res.writeHead(200, {
+				'content-type': 'text/html; charset=utf-8',
+				// 解释页需要页内 <style>/<script>；禁掉外部源与 iframe，降低“万一页子内容有问题”的影响面。
+				'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'self'",
+				'x-content-type-options': 'nosniff',
+				'referrer-policy': 'no-referrer',
+				'cache-control': 'no-store',
+			});
 			fs.createReadStream(full).pipe(res);
 			return;
 		}
@@ -214,10 +243,14 @@ export function createServer({ config, log }) {
 		}
 	});
 
-	const timer = setInterval(() => media.pruneOlderThan(config.retentionHours, log), 6 * 3600_000);
+	const timer = setInterval(() => {
+		media.pruneOlderThan(config.retentionHours, log);
+		// 页面比图片容易再打开（手机会加书签），保留期长一些；config.pageRetentionHours 可调。
+		pages.pruneOlderThan(config.pageRetentionHours ?? 24 * 14, log);
+	}, 6 * 3600_000);
 	timer.unref?.();
 
-	return { server, gateway, notifier, sessions, media, config };
+	return { server, gateway, notifier, sessions, media, pages, config };
 }
 
 export function start({ config, log }) {

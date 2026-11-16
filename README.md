@@ -98,7 +98,26 @@ pi 1.5.2 没有原生「危险命令审批」，所以约定由模型在回复�
 > 2026-11-16 事故：一条「手机 pi 使用指南」回复把两个标记当文档示例写在行内代码里，旧的正则在整段正文全文匹配，
 > 结果示例被真的执行了——弹出问题为「问题」、选项为「选项A/选项B」的确认卡（微信里看不到选项，用户只能照抄），
 > 同时 `[[PI_SESSION:new]]` 示例真的新开了一个会话（上下文全丢）。回归见 `scripts/verify-markers.mjs`。
-> 所以模型侧的护栏也写进了入口简报（`ENTRY_BRIEF` 第 5 条）：讲解协议时不要原样输出标记，改成 `PI_CONFIRM(…)` 这种非触发写法或放进代码块。
+> 所以模型侧的护栏也写进了入口简报（`ENTRY_BRIEF` 第 6 条）：讲解协议时不要原样输出标记，改成 `PI_CONFIRM(…)` 这种非触发写法或放进代码块。
+
+## 本机 HTML 页面发布（`[[PI_PAGE:…]]`，2026-11-16 新增）
+
+模型（例如 `answer-me-with-html` 技能）写完一个本机 HTML 解释页后，在回复末行单独输出：
+
+```
+[[PI_PAGE:C:\path\to\explain.html|调度原理]]
+```
+
+网关在 `agent_settled` 后扫描（`#scanPageMarker()`，匹配规则与其它标记一样：独占一行、不在代码里），
+把文件**复制**进 `pages/` 并发 `page_ready` 事件（`{name,url,title,bytes,at}`）；
+手机 `PiConsole` 会在对话里插一张「📄 打开」卡片，「页面(N)」面板列出已发布页面，点了在新标签打开。
+这样不需要给技能加「起 HTTP 服务」的提示词，也不会让解释页的 `fetch` 跨域打网关。
+
+- **URL**：`/pi/pages/<slug>-<sha8>.html?token=<网关令牌>`。哈希取**源路径**的 sha1 前 8 位 ⇒ 同一个文件重发覆盖同一个 URL（页面只反映最新状态），不同目录同名文件不会互相顶掉，URL 也不泄露本机目录。
+- **访问控制**：走 `/pi/` 那条 nginx 规则（不用改 nginx）；要令牌（`?token=` 或 `x-pi-token`）；响应头 `cache-control: no-store`、`x-content-type-options: nosniff`、`referrer-policy: no-referrer` + CSP（页内脚本/内联样式可用，外联资源与 `fetch` 被 `default-src 'none'` 拦掉）。
+- **安全边界（重要）**：页面与本控制台**同源**，能读 localStorage 里的令牌、能调同站接口。所以 `pages.mjs` **只接受本机自己生成/修改的 `.html`**（拒绝远程抓来的 HTML），单文件默认上限 2MB（`maxPageBytes` 可配），保留 `pageRetentionHours`（默认 14 天）后自动清；`pages/` 已进 `.gitignore`（生成的解释页不是源码）。
+- 标题优先级：标记里写的 > 页面自己的 `<title>` > 文件名。
+- 发布失败只写日志 + 一条 `notice`（`[pages] 发布失败：文件不存在：…`），不影响本轮回答。
 
 ## 会话
 
@@ -118,7 +137,8 @@ pi 1.5.2 没有原生「危险命令审批」，所以约定由模型在回复�
 | `verify-rename.mjs` | `session_rename` → 列表里读到新名（pi 追加 `session_info`，按时间戳取最新） | PASS（改名→改回，往返通过） |
 | `verify-notify.mjs` | 通知器真发一次（会真发企业微信，慎用） | sent=1 → `opsUser` |
 | `probe-longrun.mjs` | 长任务告警 | 见 logs/probe.out |
-| `verify-markers.mjs` | 标记匹配规则：文档示例（行内代码/围栏）不触发、真标记独占一行才触发（纯离线，不连活体网关） | PASS 12/12 |
+| `verify-markers.mjs` | 标记匹配规则：文档示例（行内代码/围栏）不触发、真标记独占一行才触发（纯离线，不连活体网关） | PASS 19/19（含 `PI_PAGE` 7 条） |
+| `verify-pages.mjs` | 页面发布：同名重发不堆 URL、不同目录不互顶、`..`/非 `.html` 拒绝、索引跨重启保留标题、只删过期页、大小上限报错文案（纯离线） | PASS 26/26 |
 
 跑之前记得 `PI_NOTIFY_CENTER_URL=http://127.0.0.1:33399` + 起 stub，否则会打到生产 center。
 

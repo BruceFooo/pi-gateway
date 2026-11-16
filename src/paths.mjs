@@ -8,3 +8,4 @@ import { fileURLToPath } from 'node:url';
 export const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const STATE_DIR = path.join(PKG_ROOT, 'state');
 export const MEDIA_DIR = path.join(PKG_ROOT, 'media');
+export const PAGES_DIR = path.join(PKG_ROOT, 'pages');

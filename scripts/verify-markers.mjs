@@ -5,7 +5,7 @@
  * 被当成真标记执行，弹出「问题」确认卡并新开了会话。
  * 用法：node scripts/verify-markers.mjs
  */
-import { findConfirmMarker, findSessionMarker, ignoredMarkerHint } from '../src/markers.mjs';
+import { findConfirmMarker, findSessionMarker, findPageMarker, ignoredMarkerHint } from '../src/markers.mjs';
 
 let n = 0, bad = 0;
 const check = (ok, label, extra = '') => { n++; console.log(`${ok ? 'PASS' : 'FAIL'}  ${label}${extra ? '  :: ' + extra : ''}`); if (!ok) bad++; };
@@ -22,7 +22,8 @@ const guide = [
 	'- `[[PI_SESSION:new]]` → 建议新开会话',
 	'- `[[PI_SESSION:<sessionId>]]` → 建议切到已有会话',
 ].join('\n');
-check(findConfirmMarker(guide) === null || findConfirmMarker(guide).question === null, '行内代码里的 PI_CONFIRM 示例不触发', JSON.stringify(findConfirmMarker(guide)));
+const cm = findConfirmMarker(guide);
+check(cm === null || cm.question === null, '行内代码里的 PI_CONFIRM 示例不触发', JSON.stringify(cm));
 check(findSessionMarker(guide) === null, '行内代码里的 PI_SESSION 示例不触发', String(findSessionMarker(guide)));
 check(!!ignoredMarkerHint(guide, 'PI_CONFIRM'), '被忽略的示例仍会留下日志线索', ignoredMarkerHint(guide, 'PI_CONFIRM') ?? '');
 
@@ -46,12 +47,22 @@ const m2 = findConfirmMarker(multi);
 check(m2?.question === '第二个' && eq(m2.options, ['c']), '多个标记取最后一个，允许列表前缀', JSON.stringify(m2));
 
 // 6) 混排在一句话里 -> 不触发（要求独占一行）
-check(findConfirmMarker('示例写法是 [[PI_CONFIRM:x|y]]，不要用反引号。')?.question == null, '标记混在句子里不触发', JSON.stringify(findConfirmMarker('示例写法是 [[PI_CONFIRM:x|y]]，不要用反引号。')));
+const cm2 = findConfirmMarker('示例写法是 [[PI_CONFIRM:x|y]]，不要用反引号。');
+check(cm2?.question == null, '标记混在句子里不触发', JSON.stringify(cm2));
 
 // 7) 会话标记：new / id
 check(findSessionMarker('这个任务会长期污染本会话。\n[[PI_SESSION:new]]') === 'new', 'PI_SESSION:new 被采纳');
 check(findSessionMarker('正文…\n[[PI_SESSION:01a1e07a-efef-71e6-84ae-2a809a49aada]]') === '01a1e07a-efef-71e6-84ae-2a809a49aada', 'PI_SESSION:<id> 原样返回（大小写敏感）');
 check(findSessionMarker('正文 [[PI_SESSION:new]] 结尾') === null, 'PI_SESSION 混在句子里不触发');
+
+// 8) 页面标记：[[PI_PAGE:<绝对路径>|标题]]
+check(eq(findPageMarker('页面写好了。\n[[PI_PAGE:C:/out/explain.html|调度原理]]'), { path: 'C:/out/explain.html', title: '调度原理', ignoredInline: false }), 'PI_PAGE 被采纳（带标题）', JSON.stringify(findPageMarker('页面写好了。\n[[PI_PAGE:C:/out/explain.html|调度原理]]')));
+check(eq(findPageMarker('[[PI_PAGE:/tmp/a.html]]'), { path: '/tmp/a.html', title: null, ignoredInline: false }), 'PI_PAGE 不带标题也可以');
+check(findPageMarker('示例：`[[PI_PAGE:C:/a.html|x]]`')?.path == null, '行内代码里的 PI_PAGE 示例不发布');
+check(findPageMarker('说明：\n```\n[[PI_PAGE:C:/a.html]]\n```')?.path == null, '围栏代码块里的 PI_PAGE 不发布');
+check(findPageMarker('看 [[PI_PAGE:C:/a.html]] 这个链接')?.path == null, 'PI_PAGE 混在句子里不发布');
+check(findPageMarker('正文里没有标记') === null, '没写过 PI_PAGE 直接 null');
+check(!!ignoredMarkerHint('示例 `[[PI_PAGE:C:/a.html]]`', 'PI_PAGE'), '被忽略的页面标记也会留日志线索');
 
 console.log(`\n${n - bad}/${n} 通过`);
 process.exitCode = bad ? 1 : 0;
