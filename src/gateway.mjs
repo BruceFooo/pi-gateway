@@ -208,8 +208,13 @@ export class Gateway {
 					return this.#respond(conn, id, true, { pages: this.pages.list() });
 				case CLIENT_MSG.SessionList:
 					return this.#respond(conn, id, true, { bound: this.boundSessionId(), active: this.activeSession?.id ?? null, sessions: this.sessions.list().map((s) => ({ sessionId: s.sessionId, title: s.title, cwd: s.cwd, createdAt: s.createdAt, lastActiveAt: s.lastActiveAt ?? null, active: s.path === this.activeSession?.file, bound: s.path === this.boundSessionFile, parentSession: s.parentSession ?? null })) });
-				case CLIENT_MSG.SessionTranscript:
-					return this.#respond(conn, id, true, this.sessions.transcript(String(msg.sessionId ?? '')));
+				case CLIENT_MSG.SessionTranscript: {
+					// before = 上一页返回的 cursor（字节偏移），带上它就往前翻一页；不传 = 最新一页
+					const before = Number(msg.before);
+					return this.#respond(conn, id, true, this.sessions.transcript(String(msg.sessionId ?? ''), {
+						before: Number.isFinite(before) && before > 0 ? before : undefined,
+					}));
+				}
 				case CLIENT_MSG.SessionSwitch:
 					return this.#sessionSwitch(id, msg);
 				case CLIENT_MSG.SessionNew:

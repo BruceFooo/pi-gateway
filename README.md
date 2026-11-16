@@ -127,7 +127,9 @@ pi 1.5.2 没有原生「危险命令审批」，所以约定由模型在回复�
 工具条上另有一个「页面(N)」面板（`page_list`）：翻旧页不用往上划很久的回答——面板按发布时间倒序列出 `pages/` 里的页，
 一行两个动作：「跳到回答」（`revealPage()`：在时间线里找 `pageOf()` 对上那一行，`foldOverride` 解开折叠、
 `getElementById('ln-<id>').scrollIntoView()` 滚过去并闪一下勾边）与「看整页」（开一个 92% 高的浮层再嵌一份）；
-历史里对不上那一发（已滑出历史窗口）时，点行直接退化成开浮层。
+历史按字节分页（默认只给最近 512KB），所以那一发可能已在窗口外：面板会标出来（「回答在更早的历史里」），
+按钮变成「往前翻找」，`revealPage()` 自己调 `loadEarlier()` 往前翻（上限 8 页）再跳；翻到头还没有就直说
+（toast「历史里没有这一发」），不再静默退化成开浮层。分页协议见 DESIGN.md 第 13 节（`session_transcript` 的 `before`/`cursor`/`hasMore`）。
 卡片形式（`target=_blank`）已删——新标签在企业微信里会被拦，就是当时那个「点了没反应」。
 这样不需要给技能加「起 HTTP 服务」的提示词，也不会让解释页的 `fetch` 跨域打网关。
 
@@ -157,6 +159,7 @@ pi 1.5.2 没有原生「危险命令审批」，所以约定由模型在回复�
 | `verify-notify.mjs` | 通知器真发一次（会真发企业微信，慎用） | sent=1 → `opsUser` |
 | `probe-longrun.mjs` | 长任务告警 | 见 logs/probe.out |
 | `verify-markers.mjs` | 标记匹配规则：文档示例（行内代码/围栏）不触发、真标记独占一行才触发、缺 `]]` 的自动闭合兜底（纯离线，不连活体网关） | PASS 25/25（含 `PI_PAGE` 11 条） |
+| `verify-transcript-paging.mjs` | 历史分页：逐页翻 == 一次读全量、页边界不拆条目、字节游标不重叠、CJK 字节偏移、超长单行不致空转（纯离线造会话文件） | PASS（会话 A 11 页 42 行 + 会话 B 超长条目） |
 | `verify-pages.mjs` | 页面发布：同名重发不堆 URL、不同目录不互顶、`..`/非 `.html` 拒绝、索引跨重启保留标题、只删过期页、大小上限报错文案、内联预览去脚本（script/stylesheet preload/`on*`/`meta refresh` 剔干但 `<style>`/内联 SVG/data-URI 图/正文里的 `on=` 文本保留）（纯离线） | PASS 36/36 |
 
 跑之前记得 `PI_NOTIFY_CENTER_URL=http://127.0.0.1:33399` + 起 stub，否则会打到生产 center。

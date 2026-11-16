@@ -178,41 +178,33 @@ export class SessionStore {
 	}
 
 	/**
-	 * 把会话文件渲染成前端用的 transcript 行。
-	 * @returns {{session:object|null, truncatedBefore:number, lines:Array<object>}}
+	 * 把会话文件渲染成前端用的 transcript 行，按字节游标分页。
+	 * 不带 before = 最新一页（文件尾部 maxBytes）；带 before = 上一页返回的 cursor（那一页首行的字节偏移），再往前翻一页。
+	 * 页边界只落在 JSONL 行边界上，而一个条目（entry.id）渲染出的所有行都来自同一行
+	 * ⇒ 条目不会被拆散、页与页不重叠、翻到文件头自然停。
+	 * @returns {{session:object|null, truncatedBefore:number, lines:Array<object>, cursor:number|null, hasMore:boolean}}
 	 */
 	transcript(sessionId, opts = {}) {
 		const maxBytes = opts.maxBytes ?? 512 * 1024;
+		const before = Number.isFinite(opts.before) && opts.before > 0 ? Math.floor(opts.before) : null;
 		const session = this.findById(sessionId);
-		if (!session) return { session: null, truncatedBefore: 0, lines: [] };
-		const text = (() => {
-			try {
-				const stat = fs.statSync(session.path);
-				if (stat.size > maxBytes) {
-					const fd = fs.openSync(session.path, 'r');
-					try {
-						const buf = Buffer.alloc(maxBytes);
-						const bytes = fs.readSync(fd, buf, 0, maxBytes, stat.size - maxBytes);
-						// 从第一条完整行开始，避免半行
-						const chunk = buf.toString('utf8', 0, bytes);
-						const cut = chunk.indexOf('\n');
-						return { text: cut >= 0 ? chunk.slice(cut + 1) : chunk, skippedHead: true };
-					} finally {
-						fs.closeSync(fd);
-					}
-				}
-				return { text: fs.readFileSync(session.path, 'utf8'), skippedHead: false };
-			} catch (err) {
-				this.log(`[sessions] 读取 transcript 失败：${err?.message}`);
-				return { text: '', skippedHead: false };
-			}
-		})();
+		if (!session) return { session: null, truncatedBefore: 0, lines: [], cursor: null, hasMore: false };
+		let size = 0;
+		try {
+			size = fs.statSync(session.path).size;
+		} catch (err) {
+			this.log(`[sessions] 读取 transcript 失败：${err?.message}`);
+			return { session, truncatedBefore: 0, lines: [], cursor: null, hasMore: false };
+		}
+		// before 只能是上一页的 cursor 或 size，都在行边界上 ⇒ 本页末行必完整；开头若是半行由 #readPageBackwards 丢掉
+		const endByte = before == null ? size : Math.min(Math.max(0, before), size);
+		const page = this.#readPageBackwards(session.path, Math.max(0, endByte - maxBytes), endByte);
 
 		let lines = [];
 		let truncatedBefore = 0;
 		let imageSeq = 0;
 		let firstKeptEntryId = null;
-		for (const line of text.text.split('\n')) {
+		for (const line of page.text.split('\n')) {
 			if (!line.trim()) continue;
 			let entry;
 			try {
@@ -231,14 +223,54 @@ export class SessionStore {
 			if (Array.isArray(rendered)) lines.push(...rendered);
 			else lines.push(rendered);
 		}
-		if (text.skippedHead) {
-			truncatedBefore = Math.max(1, Math.floor(session.path ? countLinesApprox(session.path, maxBytes) : 1));
-			lines.unshift({ kind: 'notice', text: `（更早的 ${truncatedBefore} 条未显示）`, time: null });
+		if (page.startByte > 0) {
+			// 只是给前端一个「还有多少」的量级，不是精确条数：按平均行长估
+			const avg = Math.max(200, size / 200);
+			truncatedBefore = Math.max(1, Math.round(page.startByte / avg));
 		}
 		if (firstKeptEntryId) {
 			// 保留 fork/branch 需要的锚点，前端不必显示
 		}
-		return { session, truncatedBefore, lines };
+		const hasMore = page.startByte > 0;
+		return { session, truncatedBefore, lines, cursor: hasMore ? page.startByte : null, hasMore };
+	}
+
+	/**
+	 * 读 [startByte, endByte) 这一页文本。startByte>0 时开头大概率是半行：丢掉它，并返回丢掉之后真实的起始偏移，
+	 * 下一页就从这里接着往前读。若整窗都没有换行（单条条目比窗口还长，例如巨大的 toolResult），
+	 * 就整窗向前翻倍再试（最多 4 次，故单页最多读 16×maxBytes），仍找不到行头才放弃这一条并记录。
+	 * @returns {{text:string, startByte:number}}
+	 */
+	#readPageBackwards(path, startByte, endByte) {
+		if (endByte - startByte <= 0) return { text: '', startByte: endByte };
+		try {
+			const fd = fs.openSync(path, 'r');
+			try {
+				let from = startByte;
+				for (let attempt = 0; ; attempt++) {
+					const len = endByte - from;
+					const buf = Buffer.alloc(len);
+					const bytes = fs.readSync(fd, buf, 0, len, from);
+					if (from === 0) return { text: buf.toString('utf8', 0, bytes), startByte: 0 };
+					// 在字节里找换行：会话里大多是多字节中文，字节数 ≠ 字符数，用字符串下标当字节偏移会错
+					// 而且得是“行中间”的换行：cut+1 === bytes 意味着窗口里最后一个字节正好是上一个半行的结尾，
+					// 那一行在本页里仍然不完整（不查这一点就会返回空页 + 游标不前进，死循环）
+					const cut = buf.indexOf(0x0a, 0, bytes);
+					if (cut >= 0 && cut + 1 < bytes) return { text: buf.toString('utf8', cut + 1, bytes), startByte: from + cut + 1 };
+					if (attempt >= 4) {
+						this.log(`[sessions] transcript 单行超过 ${endByte - startByte} 字节且翻不动，跳过这一条`);
+						// 游标往前推，保证下一页换地方，不原地循环
+						return { text: '', startByte };
+					}
+					from = Math.max(0, from - len);
+				}
+			} finally {
+				fs.closeSync(fd);
+			}
+		} catch (err) {
+			this.log(`[sessions] 读取 transcript 失败：${err?.message}`);
+			return { text: '', startByte: 0 };
+		}
 	}
 
 	#renderMessage(entry, nextImageLabel) {
@@ -288,18 +320,6 @@ export class SessionStore {
 			return [{ kind: 'toolResult', text: text.length > 400 ? `${text.slice(0, 400)}…` : text, toolName: message.toolName ?? null, isError: !!message.isError, time, entryId: id }];
 		}
 		return null;
-	}
-}
-
-function countLinesApprox(full, maxBytes) {
-	try {
-		const size = fs.statSync(full).size;
-		if (size <= maxBytes) return 0;
-		// 只需要一个粗略数字：按平均行长估算
-		const avg = Math.max(200, size / 200);
-		return Math.round((size - maxBytes) / avg);
-	} catch {
-		return 0;
 	}
 }
 

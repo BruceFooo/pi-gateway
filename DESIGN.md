@@ -275,3 +275,27 @@ P0 的改动面已经覆盖 100% 的基础设施风险，后面每期只加交�
   （实测见过 6 分钟只有 `thinking_start/end`，无 `agent_settled`，`isStreaming=true`）不会推提醒；
   若要补，就加「N 分钟无任何事件」的 `notice`。这不是队列 bug：当时 `queueRunning:null`、`runState:idle`，
   卡顿在上游模型，不是 `markIdle()` 饿死。
+
+## 13. 历史分页（2026-11-16 晚）
+
+现象：面板里「跳到回答」和「看整页」看起来一模一样。真实原因是回答行根本不在手机上：
+`transcript()` 只读会话文件**尾部** 512KB，实测当时会话文件 **2,967,830 字节**，尾部窗口起点落在本地时间 20:33，
+而那张 TCP 页的回答是 19:43 ⇒ `pageOf()` 匹配不到 ⇒ `revealPage()` 走「开浮层」兵底，**而且这个兵底是静默的**。
+
+- 协议：`session_transcript {sessionId, before?}` → `{session, lines, truncatedBefore, cursor, hasMore}`；
+  `before` = 上一页的 `cursor`（**字节偏移**），含义是「从那个偏移再往前读 `maxBytes`」。
+  分页边界只能落在 JSONL 行边界 ⇒ 一个条目（一个 `entry.id`）渲染出的多行全来自同一行 ⇒ 条目不被拆散、页间不重叠。
+  `PROTOCOL_VERSION` 保持 1（向后兼容：老前端忽略 `cursor`/`hasMore`，新前端不传 `before` 在老网关上也能用）。
+- 两个写测试时才抓到的 bug（都有实文痕迹）：
+  1. 原先用 `chunk.indexOf('\n')` 的**字符串下标**当字节偏移返回游标 —— 会话里大多是多字节中文，字节数 ≠ 字符数
+     ⇒ 游标偏小、下一页起点落在行中间 ⇒ `JSON.parse` 失败被 `catch { continue }` 静默丢条目
+     （40 条里丢 `e004` 与 `e020`×3 行）。改成在 Buffer 上 `indexOf(0x0a)`。
+  2. 单条条目比窗口还长（巨大的 `toolResult`）时旧写法会空转/丢条目 ⇒ 整窗向前翻倍重试最多 4 次
+     （单页最多读 16×`maxBytes`），仍找不到行头就 log `[sessions] transcript 单行超过 N 字节且翻不动，跳过这一条` 并让游标继续前进。
+- 旧的合成 notice 「（更早的 N 条未显示）」删了（`countLinesApprox()` 一并删）；`truncatedBefore` 只留量级估算给诊断。
+  注意：历史里**另一种** notice「—— 更早的内容已压缩为摘要 ——」仍然存在（它来自 `type==='compaction'` 条目），
+  前端统计已加载行数时要排除它（`PiConsole.earlierLoaded()`）。
+- 自测：`scripts/verify-transcript-paging.mjs`（纯单测，不连活网关；临时目录要造在 `<root>/<子目录>/*.jsonl`，
+  因为 `SessionStore.list()` 只把子目录里的 `.jsonl` 当会话，传成含文件的目录会得到空列表）。
+  断言：逐页拼接 == 一次全量读（42 行 / 10 页）、游标严格递减、末页 `hasMore=false`、每个 entryId 只在一页里、
+  超长条目（~6KB / 窗口 800 字节）能翻到头且只渲染一次。

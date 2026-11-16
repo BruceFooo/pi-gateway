@@ -19,7 +19,7 @@ export const CLIENT_MSG = {
 	SessionList: 'session_list',
 	SessionSwitch: 'session_switch', // {sessionId|null (=绑定入口会话)}
 	SessionNew: 'session_new',
-	SessionTranscript: 'session_transcript', // {sessionId}
+	SessionTranscript: 'session_transcript', // {sessionId, before?} → {session, lines, truncatedBefore, cursor, hasMore}；before=上一页的 cursor（字节偏移）往前翻
 	SessionRename: 'session_rename', // {sessionId, name|null}
 	SessionFork: 'session_fork', // {entryId?}
 	ModelList: 'model_list',
