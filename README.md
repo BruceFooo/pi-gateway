@@ -31,12 +31,24 @@ scripts/            重启脚本 + 全部自测脚本
 
 ```powershell
 # 生产常驻：Windows 服务（WinSW，配置 service/pi-gateway.xml，显示名 Pi Gateway）
-sc.exe stop pi-gateway && sc.exe start pi-gateway        # 普通权限即可重启服务
-# 服务态日志：logs/service/pi-gateway.out.log / .err.log / .wrapper.log
+# ⚠ 用这个，不要手打 sc.exe stop && sc.exe start：
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/restart-service.ps1
+# 要等手机上这一轮回答发完再重启，就加 -DelaySec 75
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/restart-service.ps1 -DelaySec 75
+# 服务态日志：logs/service/pi-gateway.out.log / .err.log / .wrapper.log；重启动作日志 logs/restart-service.log
 
-# 手动跑（开发调试用；会先杀掉 33336 监听者 + 残留的 pi --mode rpc 孤儿进程）
+# 手动跑（开发调试用；同样会先杀掉 33336 监听者 + 残留的 pi --mode rpc 孤儿进程）
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/restart-gateway.ps1
 ```
+
+**为什么必须用 `restart-service.ps1`（2026-11-16 踩坑实录）**：`sc.exe stop pi-gateway` 只结束 WinSW 包装进程，
+它起的 `node index.js` 子进程**不会被杀**，变成孤儿继续占着 33336；接着 `sc.exe start` 起的新实例因
+EADDRINUSE 崩掉，服务变 `STOPPED / WIN32_EXIT_CODE 1067（进程意外终止）`，而端口上跑的还是**旧代码**的旧进程。
+当时的表象是：手机上点「页面」按钮报 `未知指令： page_list`，`/healthz` 的 `uptimeSec` 还是 4 小时。
+脚本在 stop 之后按端口清理孤儿（连带它起的 `pi --mode rpc` 子进程），再 start，并在结尾自动验：
+`sc query` 应为 RUNNING、`/healthz` 的 `uptimeSec` 应变小、`GET /pi/pages/__probe__.html` 不带令牌应返 **401**
+（404 = 跑的还是旧代码）。**注意这会掐断当前 pi 会话**（会话是网关起的子进程），跑之前先跟手机上的人打招呼
+或用 `-DelaySec`。
 
 服务是 `service/pi-gateway.xml` 生成的（`scripts/make-service-xml.ps1`），**安装时把 PATH 快照写死在
 xml 里**：node 或 pi 的路径变了，要重跑生成脚本并 `sc.exe delete pi-gateway` + 重新 install（需管理员）。
