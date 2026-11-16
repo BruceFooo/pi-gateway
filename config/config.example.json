@@ -1,0 +1,26 @@
+{
+  "host": "127.0.0.1",
+  "port": 33336,
+  "token": "<改成自己的长随机串：node -e \"console.log(require('crypto').randomBytes(24).toString('base64url'))\">",
+  "piCommand": "node",
+  "piArgs": [
+    "<node 安装目录>/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js",
+    "--mode",
+    "rpc"
+  ],
+  "cwd": "<本机工作区>/java/distrisched",
+  "sessionsDir": "<用户主目录>/.pi/agent/sessions",
+  "publicUrl": "https://<UI域名>/admin/",
+  "notify": {
+    "centerUrl": "https://<CENTER域名>",
+    "token": "<与 task_center 的 pi.notify.token 相同>",
+    "toUser": "opsUser",
+    "enabled": true
+  },
+  "retentionHours": 48,
+  "maxImagesPerMessage": 4,
+  "maxImageBytes": 8388608,
+  "autoRestart": true,
+  "approvalTimeoutMs": 900000,
+  "longRunNotifyMs": 600000
+}

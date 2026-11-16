@@ -1,0 +1,8 @@
+node_modules/
+logs/
+media/
+state/
+config/config.json
+*.log
+service/*.exe
+scripts/pi-token.txt

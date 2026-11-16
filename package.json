@@ -1,0 +1,14 @@
+{
+  "name": "pi-gateway",
+  "version": "1.0.0",
+  "private": true,
+  "description": "pi --mode rpc 常驻网关：手机端（admin 子应用 /pi）通过 nginx + frp 连到这台 Windows 上的 pi，单跑队列 + 定时任务 + 企业微信通知。",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "smoke": "node scripts/smoke.mjs"
+  }
+}
