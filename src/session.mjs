@@ -197,7 +197,13 @@ export class SessionStore {
 			return { session, truncatedBefore: 0, lines: [], cursor: null, hasMore: false };
 		}
 		// before 只能是上一页的 cursor 或 size，都在行边界上 ⇒ 本页末行必完整；开头若是半行由 #readPageBackwards 丢掉
-		const endByte = before == null ? size : Math.min(Math.max(0, before), size);
+		let endByte = before == null ? size : Math.max(0, before);
+		if (endByte > size) {
+			// 游标落在文件外：会话文件被 pi/bili 重写或缩小过（也可是前端拿着旧游标重试）。
+			// 退回末尾继续翻：可能重复几条，但不能卡死、也不能报错给前端。一定要写日志，不然这类事永远看不见。
+			this.log(`[sessions] 游标 ${before} 已超出当前文件 ${size} 字节（会话文件被重写/缩小），已退回文件末尾继续翻页`);
+			endByte = size;
+		}
 		const page = this.#readPageBackwards(session.path, Math.max(0, endByte - maxBytes), endByte);
 
 		let lines = [];
@@ -232,6 +238,8 @@ export class SessionStore {
 			// 保留 fork/branch 需要的锚点，前端不必显示
 		}
 		const hasMore = page.startByte > 0;
+		// 每页留一行日志：分页上线后只能靠 gateway.log 判断它跑得好不好（前端只能看到“又多了几条”）
+		this.log(`[sessions] transcript ${String(session.id ?? sessionId)} ${before == null ? "末页" : `游标 ${before}`} 读 ${endByte - Math.max(0, endByte - maxBytes)} 字节 → ${lines.length} 行，本页起点 ${page.startByte}，hasMore=${hasMore}`);
 		return { session, truncatedBefore, lines, cursor: hasMore ? page.startByte : null, hasMore };
 	}
 

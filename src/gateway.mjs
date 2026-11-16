@@ -487,7 +487,14 @@ export class Gateway {
 
 	#onPiEvent(rec) {
 		if (!rec || typeof rec !== 'object') return;
-		if (rec.type !== 'message_update') this.log(`[pi:event] ${rec.type}${rec.aborted !== undefined ? ` aborted=${rec.aborted}` : ''}`);
+		// extension_error 只打事件名等于没日志：pi 的载荷是 {extensionPath, event, error}
+		// （pi-coding-agent/dist/modes/rpc/rpc-mode.js:267），少了它们就永远无法定性“是哪个插件、在哪个钩子上抛的”。
+		if (rec.type !== 'message_update') {
+			const extra = rec.type === 'extension_error'
+				? ` ext=${String(rec.extensionPath ?? '?')} event=${String(rec.event ?? '?')} err=${String(rec?.error?.message ?? rec?.error ?? '').replace(/\s+/g, ' ').slice(0, 300)}`
+				: '';
+			this.log(`[pi:event] ${rec.type}${rec.aborted !== undefined ? ` aborted=${rec.aborted}` : ''}${extra}`);
+		}
 		switch (rec.type) {
 			case 'agent_start':
 				this.runState = 'running';

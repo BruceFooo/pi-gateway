@@ -113,6 +113,32 @@ ok(allB.some((l) => l.entryId === "fat"), "B：超长条目也被渲染出来了
 ok(allB.filter((l) => l.entryId === "fat").length === 1, "B：超长条目只出现一次");
 ok(["fat", "e001", "e002"].every((id) => allB.some((l) => l.entryId === id)), "B：三条全部到位");
 
+// 会话 C：翻页翻到一半会话文件被缩小（pi/bili 重写、或前端拿着旧游标重试）：
+// 不能空转、不能报错给前端，并且要在网关日志里看得见（不然这类事永远无人知道）
+const linesC = [];
+for (let i = 1; i <= 20; i++) linesC.push(entry(i, [{ type: "text", text: pad(i, 200) }]));
+const fileC = writeSession("2026-01-01T00-00-00-002Z_cccc0000-0000-0000-0000-00000000000c.jsonl", linesC);
+const sidC = path.basename(fileC, ".jsonl").split("_").pop();
+const logsC = [];
+const storeC = new SessionStore({ dir: tmp, log: (m) => logsC.push(m) });
+const firstC = storeC.transcript(sidC, { maxBytes: 1200 });
+ok(firstC.hasMore && firstC.cursor > 0, "C：首页拿到游标", `cursor=${firstC.cursor}`);
+const sizeBefore = fs.statSync(fileC).size;
+fs.truncateSync(fileC, Math.floor(sizeBefore / 2)); // 把文件砍一半
+let guardC = 0;
+let stale = firstC.cursor;
+let pageC = null;
+while (guardC++ < 5) {
+    pageC = storeC.transcript(sidC, { maxBytes: 1200, before: stale });
+    if (!pageC.hasMore) break;
+    if (pageC.cursor >= stale) break; // 游标不前进就是空转，下面断言会抓住
+    stale = pageC.cursor;
+}
+ok(pageC && pageC.lines.length > 0, "C：游标超出当前文件时仍返回内容而不是空页", `lines=${pageC?.lines?.length}`);
+ok(guardC < 5, "C：缩小后没有死循环", `guard=${guardC}`);
+ok(logsC.some((m) => /已超出当前文件/.test(m)), "C：越界写了一条日志", `logs=${logsC.join(" | ").slice(0, 200)}`);
+ok(logsC.some((m) => /transcript .*bytes? ?/.test(m)) || logsC.some((m) => /transcript/.test(m)), "C：每页有一行日志（分页上线后只能靠 gateway.log 看）", `logs=${logsC.join(" | ").slice(0, 200)}`);
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(fails ? `VERIFY FAIL (${fails})` : "VERIFY OK");
 process.exit(fails ? 1 : 0);
