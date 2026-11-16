@@ -251,7 +251,9 @@ P0 的改动面已经覆盖 100% 的基础设施风险，后面每期只加交�
   内置浏览器常被拦，用户看到的是「点了页面没反应」⇒ 改成回答内嵌，面板不想要（用户原话：不用搞得这么复杂）。
   也**不把 HTML 推进 `page_ready` 事件**：162KB 一页会进 journal / 影响 resync 补发 ⇒ iframe 用 `src=/pi/pages/<name>?inline=1&token=…`。
   历史消息只有标记原文，所以 `list()` 带 `source`（源路径），前端 `pageOf(l)` 按 `normPath`（`\`→`/` + 小写）对回具体页；
-  对不上（已被保留期清掉）就不嵌，标记文本由 `cleanText()` 剥掉。前端另删了 `fmtSize()` 等卡片旧代码。
+  对不上（已被保留期清掉）就不嵌，标记文本由 `cleanText()` 剥掉。卡片形式（`target=_blank`）删了，但「页面(N)」面板按用户要求
+  （“每次都划很久才能找到之前的那个页面”）以**跳转器**形态加回来：`openPages()` 现拉 `page_list` 并按 `at` 倒序（网关 `list()` 是目录序），
+  `revealPage()` 滚到对应回答行（行上有 `:id="'ln-' + l.id"`），对不上则开 `pageViewer` 浮层再嵌一份去脚本版。
   **选这个而不是让技能自己架 HTTP**：省提示词、免 CORS、复用同一个令牌。
   文件名 = `<slug>-<sha1(源绝对路径小写) 前 8 位>.html` ⇒ 同一文件重发覆盖同一 URL、不同目录同名不互顶、
   URL 不泄露本机目录；`PageStore`（`src/pages.mjs`）= `publish/list/resolve/readInline/pruneOlderThan/#readTitle`，
