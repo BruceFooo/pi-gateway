@@ -43,6 +43,10 @@ xml 里**：node 或 pi 的路径变了，要重跑生成脚本并 `sc.exe delet
 非管理员的远程会话里 `Restart-Service pi-gateway` 会因 `NonInteractive` 失败，用上面的 `sc.exe`。
 装服务的提权一次性脚本是 `scripts/elevated-setup.ps1`（自带健康检查失败 → 自动卸载回滚）。
 
+仓库里 **不含** `service/pi-gateway.exe`（WinSW 启动器，18MB 官方二进制，已 gitignore）：新机器上从
+WinSW 的 releases 下 `WinSW-x64.exe` 改名成 `service/pi-gateway.exe` 即可，xml 由 `scripts/make-service-xml.ps1` 生成。
+同样不含 `config/config.json`（真实令牌）——从 `config/config.example.json` 拷一份再填。
+
 不要从 bash 里 `nohup node index.js &`：那样起的进程继承控制台，shell 一退就 SIGTERM。
 脚本的 stdout 也不要接管道（PowerShell 会挂）。启动后 6 秒内 `healthz` 应返回
 `{"ok":true,"protocol":1,...,"pi":{"connected":true,...},"notify":{...}}`。
