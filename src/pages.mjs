@@ -14,6 +14,37 @@ import path from 'node:path';
 const PAGE_NAME = /^[A-Za-z0-9._-]+\.html$/; // 对外只认这个形状，杜绝 ../ 与任意文件名
 const TITLE_MAX = 80;
 
+/**
+ * 把整页压成「内联预览版」：去掉会执行的东西，只留标记与样式。
+ * 回答里嵌的 iframe 走这一份（服务器还会加 CSP: script-src 'none' 兜底），
+ * 因为解释页的阅读模式本来就是纯 HTML+CSS，那 40KB 视频播放器 JS 在手机上用不上。
+ * 为什么非要把脚本剔干：iframe 的 src 带令牌，同源页内脚本能拿 URL 里的令牌去连网关 WS；
+ * 脚本干掉了，这一路就只剩「显示」。
+ * @param {string} html
+ * @returns {{html: string, scripts: number, links: number}}
+ */
+export function stripForInline(html) {
+	let scripts = 0;
+	let links = 0;
+	let out = String(html ?? '');
+	// 块级 script（带 src 的也算）：与浏览器一致，遇到第一个 </script> 就结束。
+	out = out.replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, () => {
+		scripts += 1;
+		return '';
+	});
+	out = out.replace(/<script\b[^>]*\/>/gi, () => {
+		scripts += 1;
+		return '';
+	});
+	// 外部样式表与字体预推：手机浏览器直连不到那个域名，留着只会在页里拉一堆 404。
+	out = out.replace(/<link\b[^>]*>/gi, (tag) => (/stylesheet|preload|prefetch|modulepreload/i.test(tag) ? (links += 1, '') : tag));
+	// meta refresh：能触发跳转，剔掉。
+	out = out.replace(/<meta\b[^>]*http-equiv\s*=\s*["']?refresh["']?[^>]*>/gi, '');
+	// on* 内联事件：只在**标签内**剔（先匹配整个标签再洗属性），不然正文里「上面 on=1 行」这类文本会被误删。
+	out = out.replace(/<[a-zA-Z][^>]*>/g, (tag) => tag.replace(/\s+on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, ''));
+	return { html: out, scripts, links };
+}
+
 export class PageStore {
 	/**
 	 * @param {{dir: string, log: Function, maxPageBytes?: number}} opts
@@ -99,6 +130,8 @@ export class PageStore {
 					bytes: st.size,
 					at: meta?.at ?? new Date(st.mtimeMs).toISOString(),
 					title: meta?.title ?? this.#readTitle(path.join(this.dir, name)) ?? name.replace(/\.html$/i, ''),
+					// 源绝对路径给前端用来把历史消息里的标记同到具体页（历史消息只有路径，没有 name）。
+					source: meta?.source ?? null,
 				});
 			} catch {
 				/* 刚被删掉之类，跳过 */
@@ -106,6 +139,21 @@ export class PageStore {
 		}
 		out.sort((a, b) => (a.at < b.at ? 1 : -1));
 		return out;
+	}
+
+	/**
+	 * 读「内联预览版」：已发布页去脚本后的 HTML 文本。不存在返回 null。
+	 * 不落盘额外的 .frag 文件：剔脚本是一次正则的活，每次请求重算比多存一份文件好管。
+	 */
+	readInline(name) {
+		const full = this.resolve(name);
+		if (!full) return null;
+		try {
+			return stripForInline(fs.readFileSync(full, 'utf8')).html;
+		} catch (err) {
+			this.log(`[pages] 内联版读取失败：${err?.message}`);
+			return null;
+		}
 	}
 
 	/** 把请求路径解析成本地文件（防穿越）。返回 null 表示不存在或不合法。 */

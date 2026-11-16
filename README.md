@@ -123,10 +123,12 @@ pi 1.5.2 没有原生「危险命令审批」，所以约定由模型在回复�
 
 网关在 `agent_settled` 后扫描（`#scanPageMarker()`，匹配规则与其它标记一样：独占一行、不在代码里），
 把文件**复制**进 `pages/` 并发 `page_ready` 事件（`{name,url,title,bytes,at}`）；
-手机 `PiConsole` 会在对话里插一张「📄 打开」卡片，「页面(N)」面板列出已发布页面，点了在新标签打开。
+手机 `PiConsole` 会把这一页**直接嵌在回答里**：一个 `sandbox` 的 `iframe` 加载去脚本预览版，旁边一个「完整页↗」（新窗口）。
+以前那个「页面(N)」按钮与页面列表面板已删除——卡片在新标签打开在企业微信里会被拦（就是当时那个「点了没反应」），嵌在回答里根本不需要点。
 这样不需要给技能加「起 HTTP 服务」的提示词，也不会让解释页的 `fetch` 跨域打网关。
 
 - **URL**：`/pi/pages/<slug>-<sha8>.html?token=<网关令牌>`。哈希取**源路径**的 sha1 前 8 位 ⇒ 同一个文件重发覆盖同一个 URL（页面只反映最新状态），不同目录同名文件不会互相顶掉，URL 也不泄露本机目录。
+- **两种形态**：`?inline=1` 是回答里嵌的那一份，服务端 `stripForInline()` 剔掉 `<script>` / `<link rel=stylesheet|preload|prefetch>` / `meta http-equiv=refresh` / 标签里的 `on*=` 内联事件，CSP 再加 `script-src 'none'; connect-src 'none'; form-action 'none'; base-uri 'none'`；不带 `inline` 是原始完整页（脚本可用）只给新窗口。**为什么内嵌这一路必须去脚本**：`iframe` 的 src 带令牌，同源页内脚本能拿它去连 `/pi/ws`；剔干后这一路只剩「显示」。前端又给 `sandbox=""`（不给 `allow-scripts` / `allow-same-origin`）双保险。实测 TCP 那一页 162KB → 去脚本 84KB。
 - **访问控制**：走 `/pi/` 那条 nginx 规则（不用改 nginx）；要令牌（`?token=` 或 `x-pi-token`）；响应头 `cache-control: no-store`、`x-content-type-options: nosniff`、`referrer-policy: no-referrer` + CSP（页内脚本/内联样式可用，外联资源与 `fetch` 被 `default-src 'none'` 拦掉）。
 - **安全边界（重要）**：页面与本控制台**同源**，能读 localStorage 里的令牌、能调同站接口。所以 `pages.mjs` **只接受本机自己生成/修改的 `.html`**（拒绝远程抓来的 HTML），单文件默认上限 2MB（`maxPageBytes` 可配），保留 `pageRetentionHours`（默认 14 天）后自动清；`pages/` 已进 `.gitignore`（生成的解释页不是源码）。
 - 标题优先级：标记里写的 > 页面自己的 `<title>` > 文件名。
@@ -151,7 +153,7 @@ pi 1.5.2 没有原生「危险命令审批」，所以约定由模型在回复�
 | `verify-notify.mjs` | 通知器真发一次（会真发企业微信，慎用） | sent=1 → `opsUser` |
 | `probe-longrun.mjs` | 长任务告警 | 见 logs/probe.out |
 | `verify-markers.mjs` | 标记匹配规则：文档示例（行内代码/围栏）不触发、真标记独占一行才触发、缺 `]]` 的自动闭合兜底（纯离线，不连活体网关） | PASS 25/25（含 `PI_PAGE` 11 条） |
-| `verify-pages.mjs` | 页面发布：同名重发不堆 URL、不同目录不互顶、`..`/非 `.html` 拒绝、索引跨重启保留标题、只删过期页、大小上限报错文案（纯离线） | PASS 26/26 |
+| `verify-pages.mjs` | 页面发布：同名重发不堆 URL、不同目录不互顶、`..`/非 `.html` 拒绝、索引跨重启保留标题、只删过期页、大小上限报错文案、内联预览去脚本（script/stylesheet preload/`on*`/`meta refresh` 剔干但 `<style>`/内联 SVG/data-URI 图/正文里的 `on=` 文本保留）（纯离线） | PASS 36/36 |
 
 跑之前记得 `PI_NOTIFY_CENTER_URL=http://127.0.0.1:33399` + 起 stub，否则会打到生产 center。
 

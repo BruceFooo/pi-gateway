@@ -6,6 +6,8 @@
  *   3) 不同目录同名文件 → 不同 URL（不互相覆盖）
  *   4) 标题优先 index.json，其次 <title>，最后文件名；重启（重建实例）后仍能列出
  *   5) pruneOlderThan 只删过期的，且同步清 index
+ *   6) ?inline=1 的那一份：脚本/外链样式/on* 事件剔干，样式图片链接留着，磁盘原始页不变，正文里的 on=1 不误删
+ *   7) list() 带 source（历史消息里只有源路径，前端靠它关联到具体页）
  * 用法：node scripts/verify-pages.mjs
  */
 import fs from 'node:fs';
@@ -96,6 +98,33 @@ const removed = reopened.pruneOlderThan(24 * 14);
 check(removed === 1, 'pruneOlderThan 只删过期的一个', String(removed));
 check(!fs.existsSync(old) && fs.existsSync(path.join(dir, p1.name)), '过期的删掉、新的留下');
 check(reopened.list().length === 1 && reopened.resolve(p3.name) === null, '列表与索引同步清理', String(reopened.list().length));
+
+// 7) 回答里嵌的那一份（?inline=1）：脚本剔干、样式留下、磁盘上的原始页不变
+const rich = path.join(srcA, 'inline-demo.html');
+fs.writeFileSync(
+	rich,
+	'<!doctype html><html><head><meta charset="utf-8"><title>内联演示</title>' +
+		'<link rel="stylesheet" href="https://example.com/a.css"><style>h1{color:#06f}</style></head>' +
+		'<body><h1 onmouseover="alert(1)">内联</h1>正文里留着 上面 on=1 这样的文本' +
+		'<meta http-equiv="refresh" content="3;url=https://evil.example">' +
+		'<script>var s = "<b>字符串里的 script 标记</b>";</script>' +
+		'<script src="player.js"></script>' +
+		'<img src="data:image/png;base64,AAA"><a href="https://example.com/doc">文档</a></body></html>',
+);
+const p7 = store.publish(rich, '内联演示');
+const raw = fs.readFileSync(path.join(dir, p7.name), 'utf8');
+const stripped = store.readInline(p7.name);
+check(typeof stripped === 'string', 'readInline 能读到内联版');
+check(!/\n?<(\/?)script/i.test(stripped) && !stripped.includes('<script'), '内联版里没有 script（块级与 src 都剔掉）');
+check(stripped.includes('<style>h1{color:#06f}</style>') && stripped.includes('data:image/png;base64,AAA') && stripped.includes('<a href="https://example.com/doc">'), '样式/图片/链接都留着', `${raw.length} -> ${stripped?.length}`);
+check(!stripped.includes('onmouseover') && !/http-equiv/i.test(stripped), 'on* 事件与 meta refresh 剔掉');
+check(stripped.includes('上面 on=1 这样的文本'), '正文里的 on=1 不误删（只在标签内洗属性）');
+check(raw.includes('<script>') && raw.includes('onmouseover'), '磁盘上的原始页没被动过（全屏打开仍是完整页）');
+check(stripped.length < raw.length, '内联版比原始页小');
+check(store.readInline('nope-xxxx.html') === null, '不存在的页 readInline 返 null');
+check(store.readInline('../config/config.json') === null, '越界路径 readInline 返 null');
+const withSrc = store.list().find((p) => p.name === p7.name);
+check(withSrc?.source === rich, 'list() 带 source（前端拿它把历史消息里的标记对到具体页）', String(withSrc?.source));
 
 fs.rmSync(root, { recursive: true, force: true });
 console.log(`\n${n - bad}/${n} 通过`);

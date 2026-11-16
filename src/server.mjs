@@ -176,10 +176,31 @@ export function createServer({ config, log }) {
 				res.end('unauthorized');
 				return;
 			}
-			const full = pages.resolve(url.pathname.slice('/pi/pages/'.length));
+			const name = url.pathname.slice('/pi/pages/'.length);
+			const full = pages.resolve(name);
 			if (!full) {
 				res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
 				res.end('not found');
+				return;
+			}
+			// ?inline=1 是回答里嵌的那一份：服务端先把脚本剔干，CSP 再兜一层。
+			// 为何不能直接给原始页嵌：iframe 的 src 带令牌，同源页内脚本能拿它去连 /pi/ws；
+			// 脚本剔干 + connect-src 'none' 后，这一路就只剩「显示」，什么都连不上。
+			if (url.searchParams.get('inline') === '1') {
+				const html = pages.readInline(name);
+				if (html == null) {
+					res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
+					res.end('not found');
+					return;
+				}
+				res.writeHead(200, {
+					'content-type': 'text/html; charset=utf-8',
+					'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'",
+					'x-content-type-options': 'nosniff',
+					'referrer-policy': 'no-referrer',
+					'cache-control': 'no-store',
+				});
+				res.end(html);
 				return;
 			}
 			res.writeHead(200, {

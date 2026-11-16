@@ -245,17 +245,30 @@ P0 的改动面已经覆盖 100% 的基础设施风险，后面每期只加交�
   模型在回复末行输出 `[[PI_PAGE:<绝对路径>|标题]]`（`src/markers.mjs` 的 `findPageMarker`，
   复用了确认标记的 `lastStandaloneMarker`：必须独占一行、不在围栏/行内代码里），网关在
   `agent_settled` 阶段在 `#scanConfirmMarker()` **之前**调 `#scanPageMarker()`（它会被清 `runText`），
-  复制进 `pages/` 并发 `page_ready` 事件，前端时线插「📄 页面」卡片（`page_list` 用于重连/刷新后重建）。
+  复制进 `pages/` 并发 `page_ready` 事件，**手机把这一页直接嵌在回答里**：`sandbox` 的 `iframe` 加载去脚本预览版，
+  旁边一个「完整页↗」（新窗口）。
+  **显示形态（2026-11-16 第二轮改版，用户拍板方案 A）**：第一版是卡片 + 「页面(N)」面板，`target=_blank` 在企业微信
+  内置浏览器常被拦，用户看到的是「点了页面没反应」⇒ 改成回答内嵌，面板不想要（用户原话：不用搞得这么复杂）。
+  也**不把 HTML 推进 `page_ready` 事件**：162KB 一页会进 journal / 影响 resync 补发 ⇒ iframe 用 `src=/pi/pages/<name>?inline=1&token=…`。
+  历史消息只有标记原文，所以 `list()` 带 `source`（源路径），前端 `pageOf(l)` 按 `normPath`（`\`→`/` + 小写）对回具体页；
+  对不上（已被保留期清掉）就不嵌，标记文本由 `cleanText()` 剥掉。前端另删了 `fmtSize()` 等卡片旧代码。
   **选这个而不是让技能自己架 HTTP**：省提示词、免 CORS、复用同一个令牌。
   文件名 = `<slug>-<sha1(源绝对路径小写) 前 8 位>.html` ⇒ 同一文件重发覆盖同一 URL、不同目录同名不互顶、
-  URL 不泄露本机目录；`PageStore`（`src/pages.mjs`）= `publish/list/resolve/pruneOlderThan/#readTitle`，
+  URL 不泄露本机目录；`PageStore`（`src/pages.mjs`）= `publish/list/resolve/readInline/pruneOlderThan/#readTitle`，
+  模块级导出 `stripForInline(html) -> {html, scripts, links}`（剔 `<script>`、`<link rel=stylesheet|preload|prefetch>`、
+  `meta http-equiv=refresh`、标签里的 `on*=`；**只能在标签内洗，在全文上洗会误删正文里「上面 on=1 这样的文本」**），
   索引 `pages/index.json`，`PAGE_NAME` 正则 + `startsWith(dir + path.sep)` 双保拒 `../`，2MB 上限、
   `pageRetentionHours ?? 14 天`。
   **同源风险**：页面与控制台同源 ⇒ 页内脚本能读 localStorage 里的网关令牌；硬边界是“只发布本机生成的
   HTML、拒远程抓来的 HTML”（技能自己写的静态页 ⇒ 零风险）；响应带 `no-store`/`nosniff`/`no-referrer` 与 CSP
-  `default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'`。标题优先级：标记里的 > 页内 `<title>` > 文件名。
-  `piClient.ts` 无需改（已有 `resync_required` 处理）。
-  自测：`scripts/verify-pages.mjs` 26 项 + `scripts/verify-markers.mjs` 25 项（含 PI_PAGE 11 项，其中包含标记缺收尾 `]]` 时按行尾自动闭合的兜底）。
+  `default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'`。**因此内嵌那一趟不能直接给原始页**：
+  `iframe` 的 src 带令牌，同源页内脚本能拿它去连 `/pi/ws` ⇒ `?inline=1` 服务端 `readInline()` 剔干脚本，CSP 换成
+  `script-src 'none'; connect-src 'none'; form-action 'none'; base-uri 'none'`，前端再 `sandbox=""`（不给
+  `allow-scripts` / `allow-same-origin`）。实测 TCP 那页 162171 → 83686 字节（约半）。
+  标题优先级：标记里的 > 页内 `<title>` > 文件名。`piClient.ts` 无需改（已有 `resync_required` 处理）。
+  自测：`scripts/verify-pages.mjs` 36 项（含去脚本与 `list().source`）+ `scripts/verify-markers.mjs` 25 项（含 PI_PAGE 11 项，其中包含标记缺收尾 `]]` 时按行尾自动闭合的兜底）。
+  活体自检方法：另起一个临时实例（`PI_GATEWAY_CONFIG` 指到临时 config，`port 3999`、`piCommand node` + 假 `piArgs`），
+  它共用同一个 `PAGES_DIR` ⇒ 拿已发布的页直接 curl `?inline=1`，不动生产 33336。
 - **未做（可选项）**：`#maybeLongRunNotify()` 只在 `tool_execution_end` 计数时触发 ⇒ 一轮纯文本/模型空停顿
   （实测见过 6 分钟只有 `thinking_start/end`，无 `agent_settled`，`isStreaming=true`）不会推提醒；
   若要补，就加「N 分钟无任何事件」的 `notice`。这不是队列 bug：当时 `queueRunning:null`、`runState:idle`，
