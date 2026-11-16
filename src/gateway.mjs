@@ -603,6 +603,7 @@ export class Gateway {
 			if (hit.ignoredInline) this.log('[pages] 检测到 PI_PAGE，但标记没有独占一行（或写在代码里），已忽略');
 			return;
 		}
+		if (hit.truncated) this.log('[pages] 标记缺收尾 ]]，已按行尾自动闭合');
 		let page;
 		try {
 			page = this.pages.publish(hit.path, hit.title);
@@ -628,6 +629,7 @@ export class Gateway {
 			this.log('[confirm] 检测到 PI_CONFIRM，但标记没有独占一行（或写在代码里），已忽略');
 			return;
 		}
+		if (hit.truncated) this.log('[confirm] 标记缺收尾 ]]，已按行尾自动闭合');
 		this.#openModelConfirm(hit.question, hit.options);
 	}
 

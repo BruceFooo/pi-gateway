@@ -255,7 +255,7 @@ P0 的改动面已经覆盖 100% 的基础设施风险，后面每期只加交�
   HTML、拒远程抓来的 HTML”（技能自己写的静态页 ⇒ 零风险）；响应带 `no-store`/`nosniff`/`no-referrer` 与 CSP
   `default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'`。标题优先级：标记里的 > 页内 `<title>` > 文件名。
   `piClient.ts` 无需改（已有 `resync_required` 处理）。
-  自测：`scripts/verify-pages.mjs` 26 项 + `scripts/verify-markers.mjs` 19 项（含 PI_PAGE 7 项）。
+  自测：`scripts/verify-pages.mjs` 26 项 + `scripts/verify-markers.mjs` 25 项（含 PI_PAGE 11 项，其中包含标记缺收尾 `]]` 时按行尾自动闭合的兜底）。
 - **未做（可选项）**：`#maybeLongRunNotify()` 只在 `tool_execution_end` 计数时触发 ⇒ 一轮纯文本/模型空停顿
   （实测见过 6 分钟只有 `thinking_start/end`，无 `agent_settled`，`isStreaming=true`）不会推提醒；
   若要补，就加「N 分钟无任何事件」的 `notice`。这不是队列 bug：当时 `queueRunning:null`、`runState:idle`，

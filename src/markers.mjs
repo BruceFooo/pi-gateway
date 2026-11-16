@@ -10,6 +10,11 @@
 //      「在回复最后一行单独输出标记」的要求一致；
 //   2) 标记不能出现在 markdown 代码块（```/~~~）或行内代码（`…`）里——文档示例几乎都是这样写的。
 // 命中不了但在正文里看到过标记字样时，调用方会打一行日志，便于复盘「为什么没弹卡」。
+//
+// 宽松兜底（2026-11-16 实录）：模型把标记发成 `[[PI_PAGE:C:/x/y.html|标题`（漏了收尾 ]]）过一次，
+// 严格规则下整条被当普通文字丢弃，手机上只剩一串裸文本、页面也没发布。现在若**整行就是标记**、
+// 只是缺 `]]`，按行尾自动闭合（返回里带 truncated:true，调用方记一行日志）。
+// 只对整行成立的标记生效，所以写在句子里或代码里的示例仍不会被误采纳。
 
 const FENCE = /^\s*(?:```|~~~|`{3,}|~{3,})/;
 const INLINE_CODE = /`[^`\n]*`/g;
@@ -39,7 +44,12 @@ function lastStandaloneMarker(text, name) {
 		while (/^(?:[-*+]|\d+[.)])\s+/.test(s)) s = s.replace(/^(?:[-*+]|\d+[.)])\s+/, '').trim();
 		const m = s.match(new RegExp(`^\\[\\[${name}:\\s*([\\s\\S]*?)\\s*\\]\\]$`));
 		if (m) hit = { payload: m[1] };
-		else if (s.includes(name)) sawAnywhere = true;
+		else {
+			// 缺收尾 ]]：整行以 [[NAME: 开头就把行尾当 payload（见文件头的宽松兜底说明）。
+			const open = s.match(new RegExp(`^\\[\\[${name}:\\s*([^\\n]*)$`));
+			if (open && open[1].trim()) hit = { payload: open[1].trim(), truncated: true };
+			else if (s.includes(name)) sawAnywhere = true;
+		}
 	}
 	return hit ? { ...hit, ignoredInline: sawAnywhere } : (sawAnywhere ? { payload: null, ignoredInline: true } : null);
 }
@@ -56,7 +66,7 @@ export function findConfirmMarker(text) {
 	const parts = found.payload.split('|').map((s) => s.trim()).filter(Boolean);
 	const question = parts[0];
 	if (!question) return { question: null, options: [], ignoredInline: true };
-	return { question, options: parts.slice(1, 6), ignoredInline: false };
+	return { question, options: parts.slice(1, 6), ignoredInline: false, ...(found.truncated ? { truncated: true } : {}) };
 }
 
 /** 会话标记 -> 'new' 或 sessionId。没有标记返回 null。 */
@@ -83,7 +93,7 @@ export function findPageMarker(text) {
 	if (!p) return { path: null, title: null, ignoredInline: true };
 	// 命中本身就说明这行是独占的，所以 ignoredInline=false；
 	// lastStandaloneMarker 的 sawAnywhere 对命中行也算 true，直接透传会误报「被忽略过」。
-	return { path: p, title: title || null, ignoredInline: false };
+	return { path: p, title: title || null, ignoredInline: false, ...(found.truncated ? { truncated: true } : {}) };
 }
 
 /** 正文里出现过标记字样但没被采纳，返回一行可读日志；否则 null。 */

@@ -64,5 +64,13 @@ check(findPageMarker('看 [[PI_PAGE:C:/a.html]] 这个链接')?.path == null, 'P
 check(findPageMarker('正文里没有标记') === null, '没写过 PI_PAGE 直接 null');
 check(!!ignoredMarkerHint('示例 `[[PI_PAGE:C:/a.html]]`', 'PI_PAGE'), '被忽略的页面标记也会留日志线索');
 
+// 9) 缺收尾 ]] 的标记（2026-11-16 实录：我自己在手机上漏过一次 ]]，页面没发布、手机只剩裸文本）
+check(eq(findPageMarker('页写好了。\n[[PI_PAGE:C:/out/x.html|标题'), { path: 'C:/out/x.html', title: '标题', ignoredInline: false, truncated: true }), 'PI_PAGE 缺 ]] 也采纳（按行尾自动闭合）', JSON.stringify(findPageMarker('页写好了。\n[[PI_PAGE:C:/out/x.html|标题')));
+check(eq(findConfirmMarker('选一个\n[[PI_CONFIRM:用哪个|A|B'), { question: '用哪个', options: ['A', 'B'], ignoredInline: false, truncated: true }), 'PI_CONFIRM 缺 ]] 也能弹卡', JSON.stringify(findConfirmMarker('选一个\n[[PI_CONFIRM:用哪个|A|B')));
+check(findSessionMarker('[[PI_SESSION:new') === 'new', 'PI_SESSION 缺 ]] 也生效');
+check(findPageMarker('示例：`[[PI_PAGE:C:/a.html`')?.path == null, '行内代码里缺 ]] 仍不发布');
+check(findPageMarker('看 [[PI_PAGE:C:/a.html 这个链接')?.path == null, '缺 ]] 但混在句子里仍不发布');
+check(findPageMarker('[[PI_PAGE:')?.path == null, '缺 ]] 且 payload 为空不发布');
+
 console.log(`\n${n - bad}/${n} 通过`);
 process.exitCode = bad ? 1 : 0;
