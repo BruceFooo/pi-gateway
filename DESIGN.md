@@ -241,6 +241,21 @@ P0 的改动面已经覆盖 100% 的基础设施风险，后面每期只加交�
   非交互会话里 `Restart-Service` 不可用 ⇒ `sc.exe stop/start`。
 - 发布走技能 `aliyun-<中性名>`（**必须 pwsh7**）。发现脚本 bug：`tar` 命中 Git for Windows 的
   GNU tar 1.35，报 `tar (child): Cannot connect to C: resolve failed` ⇒ 已改成 `$env:SystemRoot\System32\tar.exe`（bsdtar）。
+- 本机 HTML 页面发布（2026-11-16 新增，协议与运维细节在 README「本机 HTML 页面发布」节）：
+  模型在回复末行输出 `[[PI_PAGE:<绝对路径>|标题]]`（`src/markers.mjs` 的 `findPageMarker`，
+  复用了确认标记的 `lastStandaloneMarker`：必须独占一行、不在围栏/行内代码里），网关在
+  `agent_settled` 阶段在 `#scanConfirmMarker()` **之前**调 `#scanPageMarker()`（它会被清 `runText`），
+  复制进 `pages/` 并发 `page_ready` 事件，前端时线插「📄 页面」卡片（`page_list` 用于重连/刷新后重建）。
+  **选这个而不是让技能自己架 HTTP**：省提示词、免 CORS、复用同一个令牌。
+  文件名 = `<slug>-<sha1(源绝对路径小写) 前 8 位>.html` ⇒ 同一文件重发覆盖同一 URL、不同目录同名不互顶、
+  URL 不泄露本机目录；`PageStore`（`src/pages.mjs`）= `publish/list/resolve/pruneOlderThan/#readTitle`，
+  索引 `pages/index.json`，`PAGE_NAME` 正则 + `startsWith(dir + path.sep)` 双保拒 `../`，2MB 上限、
+  `pageRetentionHours ?? 14 天`。
+  **同源风险**：页面与控制台同源 ⇒ 页内脚本能读 localStorage 里的网关令牌；硬边界是“只发布本机生成的
+  HTML、拒远程抓来的 HTML”（技能自己写的静态页 ⇒ 零风险）；响应带 `no-store`/`nosniff`/`no-referrer` 与 CSP
+  `default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'`。标题优先级：标记里的 > 页内 `<title>` > 文件名。
+  `piClient.ts` 无需改（已有 `resync_required` 处理）。
+  自测：`scripts/verify-pages.mjs` 26 项 + `scripts/verify-markers.mjs` 19 项（含 PI_PAGE 7 项）。
 - **未做（可选项）**：`#maybeLongRunNotify()` 只在 `tool_execution_end` 计数时触发 ⇒ 一轮纯文本/模型空停顿
   （实测见过 6 分钟只有 `thinking_start/end`，无 `agent_settled`，`isStreaming=true`）不会推提醒；
   若要补，就加「N 分钟无任何事件」的 `notice`。这不是队列 bug：当时 `queueRunning:null`、`runState:idle`，
