@@ -14,7 +14,7 @@
        ▼
 阿里云 nginx 127.0.0.1:443 ── location ^~ /pi/ ──▶ 127.0.0.1:33336   (frps 本机监听)
                                                         ▲
-                                            frpc (本机, 已跑, serverAddr=<服务器公网 IP>:<frps 端口>)
+                                            frpc (本机, 已跑, serverAddr=<服务器IP>:<frps 端口>)
                                                         │
 本机 Windows ── pi-gateway (Node, 监听 127.0.0.1:33336) ◀┘
                    └─ 每个会话一个子进程：pi --mode rpc   (JSONL stdin/stdout)
@@ -97,7 +97,7 @@ pi 原生语义要在 UI 上显式区分（OpenClaw 没这么直接，别糊掉�
 
 **为什么必须经 task_center 转发**：企业微信应用消息要求「可信企业 IP」，实测服务器 `gettoken` 成功（本机直连会被拒），所以通知从服务器发。
 
-**通知对象已确认**：企业微信通讯录里 userid 恰好就是 `opsUser`（`{"name":"Bruce Foo","userid":"opsUser","department":[1]}`；另有 `Hui`）。所以「指定 opsUser」= `TextCard` 的 `touser="opsUser"`。
+**通知对象已确认**：企业微信通讯录里 userid 恰好就是 `opsUser`（`{"name":"Bruce Foo","userid":"opsUser","department":[1]}`；另有其它成员）。所以「指定 opsUser」= `TextCard` 的 `touser="opsUser"`。
 
 通道：
 ```
@@ -105,7 +105,7 @@ POST https://<CENTER域名>/ui/api/pi/notify
 Header: X-Pi-Token: <随机 32B，配置在 gateway 与 task_center 各一份>
 Body:   { "to":"opsUser", "title":"[pi] 任务完成", "body":"…摘要…", "session":"<会话id>", "kind":"settled|approval|error" }
 ```
-task_center 校验 token → `WechatSendService.sendWechatTo("opsUser", title, body)` → textcard `url=https://<UI域名>/admin/#/pi?session=<id>`（点开直达该会话，body 超长按 4000B 截断）。
+task_center 校验 token → `WechatSendService.sendWechatTo("<touser>", title, body)` → textcard `url=https://<UI域名>/admin/#/pi?session=<id>`（点开直达该会话，body 超长按 4000B 截断）。
 
 触发点（按 pi 事件精确挂钩）：
 | 事件 | 通知 |
@@ -206,8 +206,8 @@ P0 的改动面已经覆盖 100% 的基础设施风险，后面每期只加交�
 - frps：`<服务器根>/frps/frps.toml` = `bindPort=<frps 端口>` + `auth.method="token"`（无端口白名单）；`frps.service` active；`ss -lntp` 现有 `<frps 端口> 33389 33333 33334 33335`。
 - frpc：`<本机工具根>\gofrpc\frpc.toml` 已 4 条隧道（RDP 3389→33389、openwebui 3000→33333、comfyui 8188→33334、dify 8717→33335），WinSW 服务模板同目录。
 - nginx：`<服务器根>/runtime/nginx/sites-enabled/`（<站点短名>/comfyui/dify/openwebui/ai/anki/blog/cert），443 由 `runtime-nginx.service` 一个 master 承载全部 vhost；`<UI域名>.conf` 里 `/api/ → 127.0.0.1:8888/`；证书 SAN = `<域名>, *.<域名>`。
-- 服务器 = `<服务器公网 IP>`（= frpc `serverAddr`），SSH 免密 `root@<域名>`。
-- 企业微信：`corpId=<企业微信 corpId>`、`agentId=<企业微信 agentId>`（`task_center/config/QyWeixin.java` 默认值）、通讯录 userid `opsUser` / `Hui`；`TextCard(touser,...)` 第 1 参即通知对象。
+- 服务器公网 IP = frpc `serverAddr`（在 `<本机工具根>/gofrpc/frpc.toml` 第 1 行；公开仓库里不写死），SSH 免密 `root@<域名>`。
+- 企业微信：`corpId` / `agentId` 见 `task_center/config/QyWeixin.java`（公开仓库不写死），通讯录 userid 见企业微信后台；`TextCard(touser,...)` 第 1 参即通知对象。
 - 前端：`ui/task_manage/admin/App.vue` 「更多」popup grid（7 项，`/jobPolicy` 在 `:42`）、路由在 `admin/main.ts:35`、页面样例 `admin/components/JobPolicy.vue`。
 - pi：`docs/rpc.md`、`docs/rpc-commands.md`、`docs/json.md`、`docs/rpc-extension-ui.md`、`docs/sdk.md`；`RpcClient`/`createAgentSession` 均从 `@earendil-works/pi-coding-agent` 导出；会话目录 `~/.pi/agent/sessions/`（按 cwd 分组）。
 
