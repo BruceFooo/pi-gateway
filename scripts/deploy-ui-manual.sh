@@ -41,14 +41,14 @@ CSS=$(basename "$(ls dist/assets/admin-*.css | head -1)")
 JS=$(basename "$(ls dist/assets/admin-*.js | head -1)")
 STAMP=$(date +%Y%m%d-%H%M%S)
 RS=/tmp/<中性名>-$STAMP
-TAR=/tmp/<站点短名>-$STAMP.tar.gz
+TAR=/tmp/ui-dist-$STAMP.tar.gz
 tar -czf "$TAR" -C dist .
 echo "产物：$CSS / $JS，包 $(du -h "$TAR" | cut -f1)"
 
 # shellcheck disable=SC2086
 ssh $OPT "$SSH_HOST" "mkdir -p $RS"
 # shellcheck disable=SC2086
-scp $OPT -q "$TAR" "$SSH_HOST:$RS/<站点短名>-dist.tar.gz"
+scp $OPT -q "$TAR" "$SSH_HOST:$RS/ui-dist.tar.gz"
 # shellcheck disable=SC2086
 ssh $OPT "$SSH_HOST" "set -euo pipefail
 STAMP=$STAMP
@@ -58,7 +58,7 @@ UI_BK=$UI_BACKUP/\$STAMP
 mkdir -p \$(dirname \"\$UI_BK\")
 [ -d \"\$UI_ROOT\" ] && cp -a \"\$UI_ROOT\" \"\$UI_BK\"
 rm -rf \"\$RS/ui\" && mkdir -p \"\$RS/ui\"
-tar -xzf \"\$RS/<站点短名>-dist.tar.gz\" -C \"\$RS/ui\"
+tar -xzf \"\$RS/ui-dist.tar.gz\" -C \"\$RS/ui\"
 rsync -a --delete --exclude 'admin.7z' \"\$RS/ui/\" \"\$UI_ROOT/\"
 ls -1dt $UI_BACKUP/*/ 2>/dev/null | tail -n +4 | xargs -r rm -rf
 rm -rf \"\$RS\"

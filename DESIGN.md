@@ -205,7 +205,7 @@ P0 的改动面已经覆盖 100% 的基础设施风险，后面每期只加交�
 
 - frps：`<服务器根>/frps/frps.toml` = `bindPort=<frps 端口>` + `auth.method="token"`（无端口白名单）；`frps.service` active；`ss -lntp` 现有 `<frps 端口> 33389 33333 33334 33335`。
 - frpc：`<本机工具根>\gofrpc\frpc.toml` 已 4 条隧道（RDP 3389→33389、openwebui 3000→33333、comfyui 8188→33334、dify 8717→33335），WinSW 服务模板同目录。
-- nginx：`<服务器根>/runtime/nginx/sites-enabled/`（<站点短名>/comfyui/dify/openwebui/ai/anki/blog/cert），443 由 `runtime-nginx.service` 一个 master 承载全部 vhost；`<UI域名>.conf` 里 `/api/ → 127.0.0.1:8888/`；证书 SAN = `<域名>, <泛域名>`。
+- nginx：`<服务器根>/runtime/nginx/sites-enabled/`（多个站点短名，各自一份 conf），443 由 `runtime-nginx.service` 一个 master 承载全部 vhost；`<UI域名>.conf` 里 `/api/ → 127.0.0.1:8888/`；证书 SAN = `<域名>, <泛域名>`。
 - 服务器公网 IP = frpc `serverAddr`（在 `<本机工具根>/gofrpc/frpc.toml` 第 1 行；公开仓库里不写死），SSH 免密 `<SSH 目标>`。
 - 企业微信：`corpId` / `agentId` 见 `task_center/config/QyWeixin.java`（公开仓库不写死），通讯录 userid 见企业微信后台；`TextCard(touser,...)` 第 1 参即通知对象。
 - 前端：`ui/task_manage/admin/App.vue` 「更多」popup grid（7 项，`/jobPolicy` 在 `:42`）、路由在 `admin/main.ts:35`、页面样例 `admin/components/JobPolicy.vue`。
