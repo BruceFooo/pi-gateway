@@ -79,6 +79,35 @@ WinSW 的 releases 下 `WinSW-x64.exe` 改名成 `service/pi-gateway.exe` 即可
 本地自测通知链路：起 `node scripts/notify-stub.mjs`（监听 127.0.0.1:33399），
 用环境变量 `PI_NOTIFY_CENTER_URL` 指过去，`GET /hits` 看收到的 payload。
 
+## 真实域名和服务器路径放哪（脱敏约定，2026-11-17）
+
+本仓库**不写真实基础设施信息**。文档里出现的 `<UI域名>` `<服务器根>` `<SSH 目标>` `<frps 端口>` 这类尖括号都是占位符。
+
+| 里面有什么 | 文件 | 入库? |
+|---|---|---|
+| 网关运行时配置（端口、token、`publicUrl`、`notify.centerUrl`、pi 入口与 `cwd`） | `config/config.json` | ❌ `.gitignore` |
+| 部署/回滚用的清单（SSH 目标、域名、服务器路径、备份文件名、本机路径） | `config/deploy.local.json` | ❌ `.gitignore` |
+| 占位符 ↔ 真实值对照表、上线备份名等运维事实 | `OPERATIONS.local.md`、`README.local.md`、`DESIGN.local.md`（`*.local.md`） | ❌ `.gitignore` |
+| 线上 nginx 站点配置的**本机副本**（含域名、证书路径、日志路径） | `nginx/` | ❌ `.gitignore`（且它不是线上镜像，**别整份推上去**） |
+| 清单模板 | `config/deploy.example.json` | ✅ 抄成 `config/deploy.local.json` 再填真值 |
+
+脚本一律从清单取值，**缺文件或有 `CHANGE-ME` 占位值就直接报错退出，不猜默认**：
+
+```bash
+# sh：展平成 SSH_HOST / SERVER_UI_ROOT / DOMAINS_CENTER … 环境变量
+eval "$(node scripts/deploy-config.mjs --sh)"
+node scripts/deploy-config.mjs --get server.nginxVhost   # 读单个键
+```
+
+```powershell
+# ps1：同一份清单，PowerShell 5.1 / 7 都能用
+. scripts/deploy-config.ps1; $d = Get-DeployConfig; $d.server.nginxVhost
+```
+
+例外：`scripts/server-apply-pi-nginx.sh` / `server-apply-pi-token.sh` 在**服务器**上跑，那里没有 node，
+所以改成**必填环境变量**（`VHOST` / `NGINX_CONF` / `F` …），调用写法在各自文件头注释里。
+新增要落地的路径就加进 `config/deploy.local.json`（顺手在 `config/deploy.example.json` 加同名占位键），别在脚本里写死。
+
 ## 协议要点（改客户端前必读）
 
 - 事件信封是 `{type:'event', event:'<名字>', ...payload}`，**payload 展平在顶层**，
@@ -161,6 +190,7 @@ pi 1.5.2 没有原生「危险命令审批」，所以约定由模型在回复�
 | `verify-markers.mjs` | 标记匹配规则：文档示例（行内代码/围栏）不触发、真标记独占一行才触发、缺 `]]` 的自动闭合兜底（纯离线，不连活体网关） | PASS 25/25（含 `PI_PAGE` 11 条） |
 | `verify-transcript-paging.mjs` | 历史分页：逐页翻 == 一次读全量、页边界不拆条目、字节游标不重叠、CJK 字节偏移、超长单行不致空转（纯离线造会话文件） | PASS（会话 A 11 页 42 行 + 会话 B 超长条目） |
 | `verify-pages.mjs` | 页面发布：同名重发不堆 URL、不同目录不互顶、`..`/非 `.html` 拒绝、索引跨重启保留标题、只删过期页、大小上限报错文案、内联预览去脚本（script/stylesheet preload/`on*`/`meta refresh` 剔干但 `<style>`/内联 SVG/data-URI 图/正文里的 `on=` 文本保留）（纯离线） | PASS 36/36 |
+| `verify-boot-notify.mjs` | 启动通知状态机：首次启动发、计划内重启（记号在新鲜窗口内）不发、崩溃循环 10 分钟内只发 3 次、`markCleanExit` 后下次静默（纯离线，不起真网关） | PASS（4 场景） |
 
 跑之前记得 `PI_NOTIFY_CENTER_URL=http://127.0.0.1:33399` + 起 stub，否则会打到生产 center。
 

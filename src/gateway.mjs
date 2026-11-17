@@ -754,8 +754,10 @@ export class Gateway {
 	}
 
 	#deepLink() {
-		const base = this.config.publicUrl ?? 'https://<UI域名>/admin/';
-		return `${base}#/pi`;
+		// 真实域名只在本地 config/config.json 里（publicUrl），代码不写死；没配就不带链接。
+		const base = String(this.config.publicUrl ?? '').trim().replace(/\/+$/, '');
+		if (!base) return '';
+		return `${base}/#/pi`;
 	}
 
 	/** agent 用 [[PI_SESSION:new]] / [[PI_SESSION:<id>]] 建议换会话，这里执行。 */

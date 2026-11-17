@@ -9,3 +9,8 @@ scripts/pi-token.txt
 pages/
 # nginx 站点配置副本：含真实域名、证书路径、线上日志路径，只留本机
 nginx/
+
+# 部署清单（真实值不入库）：ssh/域名/服务器路径都在 config/deploy.local.json，别提交
+config/deploy.local.json
+# 含真实域名/路径的本机笔记（脱敏前原文与运维事实）
+*.local.md

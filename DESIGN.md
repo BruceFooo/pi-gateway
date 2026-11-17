@@ -10,7 +10,7 @@
 ```
 手机浏览器
   └─ https://<UI域名>/admin/  →「更多 → Pi 控制台」→ /admin/...#/pi
-       │  同源 /pi/  (HTTPS + WSS, *.<域名> 泛域名证书)
+       │  同源 /pi/  (HTTPS + WSS, <泛域名> 泛域名证书)
        ▼
 阿里云 nginx 127.0.0.1:443 ── location ^~ /pi/ ──▶ 127.0.0.1:33336   (frps 本机监听)
                                                         ▲
@@ -59,7 +59,7 @@
 
 ```
 ┌ 顶部状态条 ────────────────────────────────┐
-│ ● 空闲   <本机工具根>/.../distrisched   [模型 ▾] [思考 ▾]   ⚡3 个 run │
+│ ● 空闲   <本机工作区>/java/distrisched   [模型 ▾] [思考 ▾]   ⚡3 个 run │
 ├────────────────────────────────────────────┤
 │  ① 会话（主屏，90% 时间在这）              │
 │     用户气泡 / agent 流式文本              │
@@ -159,7 +159,7 @@ RPC 命令面（够用，无需自造）：
 
 | 层 | 措施 | 备注 |
 |---|---|---|
-| 传输 | 全链路 HTTPS/WSS（泛域名证书 `*.<域名>` 已在 `<服务器根>/cert/<域名>/`） | 手机只访问 443 |
+| 传输 | 全链路 HTTPS/WSS（泛域名证书 `<泛域名>` 已在 `<服务器根>/cert/<域名>/`） | 手机只访问 443 |
 | 暴露面 | gateway 只监听 `127.0.0.1:33336`；frpc `localIP=127.0.0.1`；nginx 从 `127.0.0.1:33336` 反代 | 不需要在阿里云安全组开新端口 |
 | frp | 沿用现有 token（`frps.toml` `auth.token`，`bindPort=<frps 端口>`，无端口白名单，客户端自选 remotePort） | **可选加固（二期）**：frps 加 `transport.bindAddr="127.0.0.1"`，四个 remotePort 就只绑回环，公网彻底摸不到。⚠️ 改了要验证现有 4 条隧道（openwebui/comfyui/dify/RDP）都是走 nginx→127.0.0.1，若有人在外网直连 `:33334` 会被打断；改前 `ss -lntp` 看 `*:33334`，改后应变成 `127.0.0.1:33334` |
 | 鉴权 | gateway 用独立 `PI_CONSOLE_TOKEN`（32B 随机，长期 bearer；配在 gateway 与前端构建期注入的常量里） | 不复用 distrisched JWT（跨语言校验麻烦，二期可做：JWT 密钥在 `task_common`，gateway 可验签）。手机端「配对」流程参考 OpenClaw：二维码/短码一次性下发设备 token，可在 admin 里吊销 |
@@ -205,8 +205,8 @@ P0 的改动面已经覆盖 100% 的基础设施风险，后面每期只加交�
 
 - frps：`<服务器根>/frps/frps.toml` = `bindPort=<frps 端口>` + `auth.method="token"`（无端口白名单）；`frps.service` active；`ss -lntp` 现有 `<frps 端口> 33389 33333 33334 33335`。
 - frpc：`<本机工具根>\gofrpc\frpc.toml` 已 4 条隧道（RDP 3389→33389、openwebui 3000→33333、comfyui 8188→33334、dify 8717→33335），WinSW 服务模板同目录。
-- nginx：`<服务器根>/runtime/nginx/sites-enabled/`（<站点短名>/comfyui/dify/openwebui/ai/anki/blog/cert），443 由 `runtime-nginx.service` 一个 master 承载全部 vhost；`<UI域名>.conf` 里 `/api/ → 127.0.0.1:8888/`；证书 SAN = `<域名>, *.<域名>`。
-- 服务器公网 IP = frpc `serverAddr`（在 `<本机工具根>/gofrpc/frpc.toml` 第 1 行；公开仓库里不写死），SSH 免密 `root@<域名>`。
+- nginx：`<服务器根>/runtime/nginx/sites-enabled/`（<站点短名>/comfyui/dify/openwebui/ai/anki/blog/cert），443 由 `runtime-nginx.service` 一个 master 承载全部 vhost；`<UI域名>.conf` 里 `/api/ → 127.0.0.1:8888/`；证书 SAN = `<域名>, <泛域名>`。
+- 服务器公网 IP = frpc `serverAddr`（在 `<本机工具根>/gofrpc/frpc.toml` 第 1 行；公开仓库里不写死），SSH 免密 `<SSH 目标>`。
 - 企业微信：`corpId` / `agentId` 见 `task_center/config/QyWeixin.java`（公开仓库不写死），通讯录 userid 见企业微信后台；`TextCard(touser,...)` 第 1 参即通知对象。
 - 前端：`ui/task_manage/admin/App.vue` 「更多」popup grid（7 项，`/jobPolicy` 在 `:42`）、路由在 `admin/main.ts:35`、页面样例 `admin/components/JobPolicy.vue`。
 - pi：`docs/rpc.md`、`docs/rpc-commands.md`、`docs/json.md`、`docs/rpc-extension-ui.md`、`docs/sdk.md`；`RpcClient`/`createAgentSession` 均从 `@earendil-works/pi-coding-agent` 导出；会话目录 `~/.pi/agent/sessions/`（按 cwd 分组）。

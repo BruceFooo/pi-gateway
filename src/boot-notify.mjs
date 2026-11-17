@@ -119,7 +119,14 @@ export async function announceBoot({ notifier, stateDir = STATE_DIR, log = () =>
 	if (count > 1) lines.push('连续重启通常意味着服务在崩溃循环：看 logs/gateway.log 的最后一行异常。');
 	const body = lines.join('\n');
 
-	const res = await notifier.send({ title, body, kind: 'gateway_boot', throttleMs: 0 });
+	let res;
+	try {
+		res = await notifier.send({ title, body, kind: 'gateway_boot', throttleMs: 0 });
+	} catch (err) {
+		// center 挂了 / DNS 失败 / 网络报错都不能把启动带崩：心跳已经写下去了，下次还能认出这次没正常退出。
+		log(`[boot] 通知未发出（发送出错）：${err?.message ?? err}`);
+		res = { ok: false, error: String(err?.message ?? err) };
+	}
 	if (res?.ok) log(`[boot] 已通知手机：${title}`);
 	else log(`[boot] 通知未发出：${res?.skipped ?? res?.error ?? '未知'}`);
 	return { sent: !!res?.ok, title, body, why, count };

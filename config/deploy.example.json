@@ -1,0 +1,36 @@
+{
+  "_comment": "复制成 config/deploy.local.json 并填真实值（deploy.local.json 不入库）。脚本从这里取域名/服务器路径/SSH 目标：node scripts/deploy-config.mjs --get ssh.host",
+  "ssh": {
+    "host": "user@your-server.example",
+    "opts": "-o BatchMode=yes -o ConnectTimeout=10 -o LogLevel=ERROR"
+  },
+  "domains": {
+    "ui": "ui.your-domain.example",
+    "center": "center.your-domain.example",
+    "wildcard": "*.your-domain.example"
+  },
+  "urls": {
+    "uiAdmin": "https://ui.your-domain.example/admin/",
+    "piHealthz": "https://ui.your-domain.example/pi/healthz",
+    "centerHealth": "https://center.your-domain.example/ui/api/health"
+  },
+  "server": {
+    "uiRoot": "/srv/www/ui",
+    "uiBackupDir": "/srv/www/.ui-backup",
+    "nginxVhost": "/etc/nginx/sites-available/ui.conf",
+    "nginxVhostBak": "/etc/nginx/sites-available/ui.conf.bak-CHANGE-ME",
+    "nginxConf": "/etc/nginx/nginx.conf",
+    "nginxBin": "/usr/sbin/nginx",
+    "nginxSitesEnabled": "/etc/nginx/sites-enabled",
+    "certDir": "/etc/ssl/certs",
+    "frpsToml": "/srv/frps/frps.toml",
+    "centerProps": "/srv/app/application.properties",
+    "centerPropsBak": "/srv/app/application.properties.bak-CHANGE-ME"
+  },
+  "local": {
+    "gatewayRoot": "CHANGE_ME/pi-gateway",
+    "frpcToml": "CHANGE_ME/frpc.toml",
+    "frpcTomlBak": "CHANGE_ME/frpc.toml.bak-CHANGE-ME",
+    "uiDir": "CHANGE_ME/ui/task_manage"
+  }
+}

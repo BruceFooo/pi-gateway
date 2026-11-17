@@ -7,7 +7,7 @@
 
       -Level service   Windows 服务 pi-gateway 停掉并卸载，回到「手动跑网关」或「完全不跑」
       -Level frpc      gofrpc 里删掉 pi-gateway 隧道段（33336），重启 remote-desktop 服务
-      -Level nginx     服务器 <站点短名> 站点还原到上线前备份，nginx -t 通过后 reload
+      -Level nginx     服务器 UI 站点还原到上线前备份，nginx -t 通过后 reload
       -Level center    task_center 的 application.properties 还原（去掉 pi.notify.token），重启 task-center
       -Level all       以上全部（默认）
 
@@ -30,16 +30,42 @@ param(
     [string] $Level = 'all',
     [switch] $Yes,
     [switch] $SelfTest,
-    [string] $SshHost = 'root@<域名>',
-    [string] $GatewayRoot = '<本机工具根>\pi-gateway',
-    [string] $FrpcToml = '<本机工具根>\gofrpc\frpc.toml',
-    [string] $NginxSite = '<服务器根>/runtime/nginx/sites-available/<UI域名>.conf',
-    [string] $NginxBak = '<服务器根>/runtime/nginx/sites-available/<UI域名>.conf.bak-20261116-115000',
-    [string] $CenterProps = '<服务器根>/java/task_center/application.properties',
-    [string] $CenterPropsBak = '<服务器根>/java/task_center/application.properties.bak-20261116-114113'
+    [string] $SshHost = '',
+    [string] $GatewayRoot = '',
+    [string] $FrpcToml = '',
+    [string] $NginxSite = '',
+    [string] $NginxBak = '',
+    [string] $CenterProps = '',
+    [string] $CenterPropsBak = ''
 )
 
 $ErrorActionPreference = 'Stop'
+
+# 真实域名/服务器路径/SSH 目标不写在脚本里，取自 config/deploy.local.json（不入库）。
+# 命令行参数仍可显式覆盖（应急时不带清单也能跑）。
+. (Join-Path $PSScriptRoot 'deploy-config.ps1')
+$deploy = $null
+try { $deploy = Get-DeployConfig } catch { Write-Host "（读部署清单失败：$($_.Exception.Message)）" }
+function Dget([string] $p) {
+    if (-not $deploy) { return '' }
+    $o = $deploy
+    foreach ($seg in $p.Split('.')) { $o = $o.$seg; if ($null -eq $o) { return '' } }
+    return [string] $o
+}
+if (-not $SshHost)      { $SshHost = Dget 'ssh.host' }
+if (-not $GatewayRoot)  { $GatewayRoot = if (Dget 'local.gatewayRoot') { Dget 'local.gatewayRoot' } else { Split-Path $PSScriptRoot -Parent } }
+if (-not $FrpcToml)     { $FrpcToml = Dget 'local.frpcToml' }
+if (-not $NginxSite)    { $NginxSite = Dget 'server.nginxVhost' }
+if (-not $NginxBak)     { $NginxBak = Dget 'server.nginxVhostBak' }
+if (-not $CenterProps)  { $CenterProps = Dget 'server.centerProps' }
+if (-not $CenterPropsBak) { $CenterPropsBak = Dget 'server.centerPropsBak' }
+$NginxBin  = Dget 'server.nginxBin';  if (-not $NginxBin) { $NginxBin = '/usr/sbin/nginx' }
+$NginxConf = Dget 'server.nginxConf'
+$PiHealthz = Dget 'urls.piHealthz'
+$CenterHealth = Dget 'urls.centerHealth'
+$SshOptList = @('-o', 'BatchMode=yes')
+if (Dget 'ssh.opts') { $SshOptList = @((Dget 'ssh.opts') -split '\s+' | Where-Object { $_ }) }
+
 $svcExe = Join-Path $GatewayRoot 'service\pi-gateway.exe'
 $doit = [bool] $Yes
 
@@ -56,7 +82,11 @@ function Run([string] $label, [scriptblock] $block, [string] $show) {
     }
 }
 function Remote([string] $cmd) {
-    ssh -o BatchMode=yes $SshHost $cmd
+    ssh @SshOptList $SshHost $cmd
+}
+function NeedServerTarget([string] $what) {
+    if (-not $SshHost) { throw "缺少 SSH 目标：在 config/deploy.local.json 填 ssh.host，或用 -SshHost 传入" }
+    if (-not $what) { throw "缺少服务器路径：在 config/deploy.local.json 里补上（或用对应参数传入）" }
 }
 function Do([string] $name) { $Level -eq 'all' -or $Level -eq $name }
 
@@ -127,35 +157,40 @@ if (Do 'frpc') {
 
 # ---------- 3. 服务器 nginx ----------
 if (Do 'nginx') {
-    Say '[nginx] 还原 <站点短名> 站点（去掉 /pi/ 转发），校验通过才 reload，失败自动还原回当前版本'
+    NeedServerTarget $NginxSite
+    Say '[nginx] 还原 UI 站点（去掉 /pi/ 转发），校验通过才 reload，失败自动还原回当前版本'
     Run '还原站点' {
         Remote "set -e; test -f $NginxBak || { echo '备份不存在，不动'; exit 1; }; cp -a $NginxSite $NginxSite.bak-before-rollback-`(date +%Y%m%d-%H%M%S`)`; cp -a $NginxBak $NginxSite; grep -c 'location \^~ /pi/' $NginxSite || echo '站点里已无 /pi/ 块'" `
             "cp -a $NginxBak $NginxSite"
         Run 'nginx -t' {
-            $chk = Remote '/usr/sbin/nginx -t -c <服务器根>/runtime/nginx/conf/nginx.conf'
+            if (-not $NginxConf) { throw '缺少 server.nginxConf（nginx -t 要校验的主配置）' }
+            $chk = Remote "$NginxBin -t -c $NginxConf"
             if ($LASTEXITCODE -ne 0) {
                 Say '      配置校验失败，保持还原后的文件不动（备份里本来就是上线前的可用配置）'
                 throw 'nginx -t 失败'
             }
-        } '/usr/sbin/nginx -t -c <服务器根>/runtime/nginx/conf/nginx.conf'
+        } "$NginxBin -t -c $NginxConf"
         Run 'reload' { Remote 'systemctl reload runtime-nginx.service; systemctl is-active runtime-nginx.service' } 'systemctl reload runtime-nginx.service'
     } 'ssh 还原 + 校验 + reload'
     Run '验证 /pi 已下线' {
-        $code = curl.exe -s -o NUL -w '%{http_code}' https://<UI域名>/pi/healthz
-        Say "      https://<UI域名>/pi/healthz -> $code（404/405 = 已下线；200 = 还在，检查 nginx）"
+        if (-not $PiHealthz) { throw '缺少 urls.piHealthz（验证 /pi 是否已下线的地址）' }
+        $code = curl.exe -s -o NUL -w '%{http_code}' $PiHealthz
+        Say "      $PiHealthz -> $code（404/405 = 已下线；200 = 还在，检查 nginx）"
     } 'curl /pi/healthz'
 }
 
 # ---------- 4. task_center 配置 ----------
 if (Do 'center') {
+    NeedServerTarget $CenterProps
     Say '[center] 去掉 pi.notify.token（微信通知入口失效），重启 task-center'
     Run '还原 application.properties' {
         Remote "set -e; test -f $CenterPropsBak || { echo '备份不存在，不动'; exit 1; }; cp -a $CenterProps $CenterProps.bak-before-rollback-`(date +%Y%m%d-%H%M%S`)`; cp -a $CenterPropsBak $CenterProps; grep -n '^pi.notify.token' $CenterProps || echo '已无 pi.notify.token'" `
             "cp -a $CenterPropsBak $CenterProps"
         Run '重启 task-center' { Remote 'systemctl restart task-center.service; sleep 8; systemctl is-active task-center.service' } 'systemctl restart task-center.service'
         Run '验证健康' {
-            $code = curl.exe -s -o NUL -w '%{http_code}' https://<CENTER域名>/ui/api/health
-            Say "      /ui/api/health -> $code"
+            if (-not $CenterHealth) { throw '缺少 urls.centerHealth（健康检查地址）' }
+            $code = curl.exe -s -o NUL -w '%{http_code}' $CenterHealth
+            Say "      $CenterHealth -> $code"
         } 'curl /ui/api/health'
     } 'ssh 还原 + 重启 + 验证'
 }

@@ -32,7 +32,7 @@ export function loadConfig(configPath, log) {
 		sessionsDir: path.join(process.env.USERPROFILE ?? process.env.HOME ?? '', '.pi', 'agent', 'sessions'),
 		entrySessionId: null,
 		defaultCwd: undefined,
-		notify: { centerUrl: 'https://<CENTER域名>', token: '', toUser: 'opsUser', enabled: true },
+		notify: { centerUrl: '', token: '', toUser: 'opsUser', enabled: true },
 		retentionHours: 48,
 		maxImagesPerMessage: 4,
 		maxImageBytes: 8 * 1024 * 1024,
