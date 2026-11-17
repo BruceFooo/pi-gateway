@@ -4,7 +4,8 @@
 # 日志：<本机工具根>\pi-gateway\logs\elevated-setup-<ts>.log（提权窗口关掉也能读到结果）
 # 卸载服务（紧急回退）：管理员 shell 里 <本机工具根>\pi-gateway\service\pi-gateway.exe uninstall
 $ErrorActionPreference = 'Continue'
-$root = '<本机工具根>\pi-gateway'
+# 包根不写死机器路径：本脚本在 <包根>\scripts\ 里，往上一级就是包根，换机器/换盘符都跟着走。
+$root = Split-Path -Parent $PSScriptRoot
 $ts   = Get-Date -Format 'yyyyMMdd-HHmmss'
 $log  = Join-Path $root "logs\elevated-setup-$ts.log"
 Start-Transcript -Path $log | Out-Null

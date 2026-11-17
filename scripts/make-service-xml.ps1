@@ -4,9 +4,12 @@
 #       所以这里把「当前登录用户实际用的 PATH / TEMP / USERPROFILE」快照写进 XML。
 #       以后 node / maven / npm 的 PATH 变了，重跑本脚本 + pi-gateway.exe reinstall 即可。
 $ErrorActionPreference = 'Stop'
-$pkg  = Split-Path -Parent $PSScriptRoot            # <本机工具根>\pi-gateway
-$node = 'C:\node\aliases\default'                   # fnm 的稳定别名目录（当前 v24.19.0）
-$user = $env:USERPROFILE                            # <用户主目录>
+$pkg  = Split-Path -Parent $PSScriptRoot            # <包根>\pi-gateway
+# node 目录也是机器路径，不入库：优先读不入库的本地清单 config/deploy.local.json 的 local.nodeDir；
+# 读不到（没清单 / 还是占位值）就从当前 PATH 上的 node.exe 反推（fnm 的别名是 junction，反推到真实版本目录，服务照样能跑）。
+$nodeFromManifest = (& node (Join-Path $pkg 'scripts/deploy-config.mjs') --get local.nodeDir 2>$null | Out-String).Trim()
+$node = if ($nodeFromManifest -and (Test-Path $nodeFromManifest)) { $nodeFromManifest } else { Split-Path -Parent (Get-Command node.exe).Source }
+$user = $env:USERPROFILE
 
 $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
 $userPath    = [Environment]::GetEnvironmentVariable('Path', 'User')

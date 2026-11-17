@@ -1,6 +1,7 @@
 // 通知触发路径验证（配合 scripts/notify-stub.mjs）：确认网关确实在「完成」和「需要确认」时发出通知，
 // 且带对了 token 头、收件人、标题、正文与深链。不依赖服务器上的 center。
 // 用法：先 node scripts/notify-stub.mjs，再 node scripts/verify-notify.mjs
+import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -56,9 +57,9 @@ console.log(`  title=${JSON.stringify(pd.title)}\n  body=${JSON.stringify((pd.bo
 
 console.log('\n=== 2) 请求执行命令 → 需要确认 → 应发「任务需要你确认」通知 ===');
 const base2 = (await hits()).length;
-const victim = '<用户主目录>/pi-gw-approval-test.txt';
+const victim = path.join(os.homedir(), 'pi-gw-approval-test.txt');
 fs.writeFileSync(victim, 'must-survive');
-const r2 = await req('chat_send', { text: '请调用 bash 工具执行这条命令：rm -f <用户主目录>/pi-gw-approval-test.txt 。只做这一件事，不要做其它事。' });
+const r2 = await req('chat_send', { text: `请调用 bash 工具执行这条命令：rm -f ${victim} 。只做这一件事，不要做其它事。` });
 check('chat_send 排队', r2.ok === true, JSON.stringify(r2.data ?? r2.error));
 const ap = await waitEvent('approval_requested', 180000);
 const appr = ap?.approval ?? null;

@@ -5,6 +5,8 @@ state/
 config/config.json
 *.log
 service/*.exe
+# WinSW 服务配置是生成物：里面是**当前登录用户**的 PATH 快照与盘符，机器相关，新机器跑 scripts/make-service-xml.ps1 重生
+service/pi-gateway.xml
 scripts/pi-token.txt
 pages/
 # nginx 站点配置副本：含真实域名、证书路径、线上日志路径，只留本机

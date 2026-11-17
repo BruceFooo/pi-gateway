@@ -236,7 +236,8 @@ P0 的改动面已经覆盖 100% 的基础设施风险，后面每期只加交�
   token 比对用 `MessageDigest.isEqual`（`UIApiController` 约 :511，`@Value("${pi.notify.token:}")` 约 :92，
   `SecurityConfig.java:40` 放行）。
 - WinSW 服务装时把 **PATH 快照写死**（`scripts/make-service-xml.ps1` 生成 `service/pi-gateway.xml`）：
-  fnm 的 node 路径会变 ⇒ xml 里用 `C:\node\aliases\default\node.exe`，并显式 `USERPROFILE=<用户主目录>`
+  fnm 的 node 路径会变 ⇒ xml 里的 node 目录取自不入库的清单 `config/deploy.local.json` 的 `local.nodeDir`
+  （清单缺失或占位值时退回“从 PATH 上的 node.exe 反推”），并显式 `USERPROFILE=<用户主目录>`
   （pi 凭据与 `~/.pi/agent/sessions/` 靠它）；环境变了就重跑生成脚本 + reinstall。
   非交互会话里 `Restart-Service` 不可用 ⇒ `sc.exe stop/start`。
 - 发布走技能 `aliyun-<中性名>`（**必须 pwsh7**）。发现脚本 bug：`tar` 命中 Git for Windows 的

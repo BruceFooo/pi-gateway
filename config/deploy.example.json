@@ -31,6 +31,7 @@
     "gatewayRoot": "CHANGE_ME/pi-gateway",
     "frpcToml": "CHANGE_ME/frpc.toml",
     "frpcTomlBak": "CHANGE_ME/frpc.toml.bak-CHANGE-ME",
-    "uiDir": "CHANGE_ME/ui/task_manage"
+    "uiDir": "CHANGE_ME/ui/task_manage",
+    "nodeDir": "CHANGE-ME/node"
   }
 }
