@@ -11,6 +11,7 @@ import { Gateway } from './gateway.mjs';
 import { SessionStore } from './session.mjs';
 import { Notifier } from './notify.mjs';
 import { PageStore } from './pages.mjs';
+import { announceBoot, markCleanExit } from './boot-notify.mjs';
 
 const MEDIA_ALLOWED_MIME = new Map([
 	['image/png', 'png'],
@@ -280,10 +281,14 @@ export function start({ config, log }) {
 		log(`[gateway] 监听 http://${config.host}:${config.port} （/healthz, /pi/ws, /pi/media）`);
 		log(`[gateway] 会话目录 ${config.sessionsDir}`);
 		log(`[gateway] 企业微信通知 ${app.notifier.status().label}`);
+		// 启动通知：能接住「崩了 / 被外部杀掉 / WinSW 拉起」这类没人告诉我们手机的场景。
+		// 计划内重启会被 state/planned-restart.json 认出来，不会多发一条。
+		void announceBoot({ notifier: app.notifier, log, port: config.port, enabled: config.notify?.bootNotice !== false });
 		void app.gateway.ensurePi();
 	});
 	const shutdown = (signal) => {
 		log(`[gateway] 收到 ${signal}，开始关停`);
+		markCleanExit(); // 下次启动就能区分“正常停下”与“崩掉”
 		void (async () => {
 			try {
 				await app.gateway.stop();

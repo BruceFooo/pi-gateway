@@ -30,6 +30,15 @@ if ($DelaySec -gt 0) { Say "等待 $DelaySec 秒后重启（让当前会话的�
 
 Notify 'pi 网关即将重启' "网关会在约 10 秒内停止并重新起来（约 15 秒后恢复）。当时正在生成的那条回答会被掐断，看不到结尾 —— 这不是崩溃，重启完直接发新消息就能接着用。"
 
+# 给新进程留个记号：网关启动时会认出“计划内重启”，就不再发一条「pi 网关已启动」（否则同一件事手机被通知两遍）。
+# 记号只在 10 分钟内有效（src/boot-notify.mjs），过期会自动清掉，不会把后来某次真崩溃误判成计划内。
+try {
+    $mark = Join-Path $PWD 'state\planned-restart.json'
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $mark) | Out-Null
+    Set-Content -Path $mark -Value ('{"at":' + [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() + ',"reason":"restart-service.ps1"}') -Encoding ascii
+    Say "已写计划内重启记号 $mark"
+} catch { Say "写计划记号失败: $($_.Exception.Message)" }
+
 Say "=== restart-service 开始"
 sc.exe stop pi-gateway 2>&1 | ForEach-Object { Say "stop: $_" }
 Start-Sleep -Seconds 3
