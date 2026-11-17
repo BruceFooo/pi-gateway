@@ -6,7 +6,7 @@
 - 网关端口 `33336`，WebSocket 路径 `/pi/ws?token=<token>`，健康检查 `GET /healthz`。
 - 前端页面在 distrisched 的 admin 子应用：`https://<UI域名>/admin/#/pi`（本地 `npm run dev` 后走 `/pi` 代理）。
 - 当前状态：**已上线（2026-11-16）**。手机走 `https://<UI域名>/admin/#/pi` →
-  阿里云 nginx → frp 隧道（remotePort 33336）→ 本机 Windows 服务 `pi-gateway`。
+  <云端服务器> nginx → frp 隧道（remotePort 33336）→ 本机 Windows 服务 `pi-gateway`。
   文字/图片/确认卡/企业微信推送均已实测通过（见「上线与回滚」）。
 
 ## 目录

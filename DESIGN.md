@@ -12,7 +12,7 @@
   └─ https://<UI域名>/admin/  →「更多 → Pi 控制台」→ /admin/...#/pi
        │  同源 /pi/  (HTTPS + WSS, <泛域名> 泛域名证书)
        ▼
-阿里云 nginx 127.0.0.1:443 ── location ^~ /pi/ ──▶ 127.0.0.1:33336   (frps 本机监听)
+<云端服务器> nginx 127.0.0.1:443 ── location ^~ /pi/ ──▶ 127.0.0.1:33336   (frps 本机监听)
                                                         ▲
                                             frpc (本机, 已跑, serverAddr=<服务器IP>:<frps 端口>)
                                                         │
@@ -33,7 +33,7 @@
 | A. pi 扩展内嵌 HTTP 桥（照搬 pi Browser Assistant 的 47860 桥） | 在正在跑的桌面 pi 里装扩展，扩展开 HTTP/WS | 只能镜像「桌面上那个正在开的会话」；桌面 pi 必须开着 | 最小（~200 行） | 不做主体，**留作二期「桌面会话投射」** |
 | **B. 独立 pi-gateway 服务（pi SDK / RpcClient）** | 本机常驻 Node 服务，自己 `new RpcClient({cliPath})` 起 `pi --mode rpc` 子进程，HTTP+WS 对外 | 新建/切换/续跑任意会话、发文本与图片、停止、审批、收通知；会话文件与桌面共用可交接 | ~600–800 行 TS + 1 个 Windows 服务 + 1 条 frp + 1 个 nginx location | **采用** |
 | C. 把 TUI 直接搬到手机（ttyd / noVNC / SSH+tmux） | 转发终端画面 | 能跑，但移动端选不了文本、看不清、没法点按钮 | 极小 | 不采用 |
-| D. 直接换用 OpenClaw（它有现成 Control UI） | 装 OpenClaw 网关 | 功能最全 | 现有资产（skills / extensions / pi Browser Assistant / 学习模式记忆 / 阿里云 skill）全在 pi 上，换宿主成本远大于写 800 行 gateway | 不采用，只**抄它的客户端契约与 UI 交互** |
+| D. 直接换用 OpenClaw（它有现成 Control UI） | 装 OpenClaw 网关 | 功能最全 | 现有资产（skills / extensions / pi Browser Assistant / 学习模式记忆 / 云端发布 skill）全在 pi 上，换宿主成本远大于写 800 行 gateway | 不采用，只**抄它的客户端契约与 UI 交互** |
 
 选 B 的关键理由：pi 已提供完整程序化接口（RPC 命令面 + 事件流 + 扩展 UI 转发），不需要给 pi 打补丁；会话文件是磁盘 JSONL，手机 ↔ 桌面天然可交接。
 
@@ -160,8 +160,8 @@ RPC 命令面（够用，无需自造）：
 | 层 | 措施 | 备注 |
 |---|---|---|
 | 传输 | 全链路 HTTPS/WSS（泛域名证书 `<泛域名>` 已在 `<服务器根>/cert/<域名>/`） | 手机只访问 443 |
-| 暴露面 | gateway 只监听 `127.0.0.1:33336`；frpc `localIP=127.0.0.1`；nginx 从 `127.0.0.1:33336` 反代 | 不需要在阿里云安全组开新端口 |
-| frp | 沿用现有 token（`frps.toml` `auth.token`，`bindPort=<frps 端口>`，无端口白名单，客户端自选 remotePort） | **可选加固（二期）**：frps 加 `transport.bindAddr="127.0.0.1"`，四个 remotePort 就只绑回环，公网彻底摸不到。⚠️ 改了要验证现有 4 条隧道（openwebui/comfyui/dify/RDP）都是走 nginx→127.0.0.1，若有人在外网直连 `:33334` 会被打断；改前 `ss -lntp` 看 `*:33334`，改后应变成 `127.0.0.1:33334` |
+| 暴露面 | gateway 只监听 `127.0.0.1:33336`；frpc `localIP=127.0.0.1`；nginx 从 `127.0.0.1:33336` 反代 | 不需要在云服务器安全组开新端口 |
+| frp | 沿用现有 token（`frps.toml` `auth.token`，`bindPort=<frps 端口>`，无端口白名单，客户端自选 remotePort） | **可选加固（二期）**：frps 加 `transport.bindAddr="127.0.0.1"`，各条隧道的 remotePort 就只绑回环，公网彻底摸不到。⚠️ 改了要验证其它既有隧道都走 nginx→127.0.0.1，若有人在外网直连某条隧道的 remotePort 会被打断；改前 `ss -lntp` 看 `*:<隧道端口>`，改后应变成 `127.0.0.1:<隧道端口>`。**既有隧道的服务名与端口清单不写进仓库**，只在不入库的 `OPERATIONS.local.md` 与 `frpc.toml` 里 |
 | 鉴权 | gateway 用独立 `PI_CONSOLE_TOKEN`（32B 随机，长期 bearer；配在 gateway 与前端构建期注入的常量里） | 不复用 distrisched JWT（跨语言校验麻烦，二期可做：JWT 密钥在 `task_common`，gateway 可验签）。手机端「配对」流程参考 OpenClaw：二维码/短码一次性下发设备 token，可在 admin 里吊销 |
 | 授权（最关键） | **pi 没有内建权限系统**：工具能不能跑，只能由 gateway 在 `tool_call` 事件上拦。建议默认：手机发起的会话只开放只读工具（read/grep/…），`bash/edit/write` 一律挂起推手机 confirm；桌面发起的会话保持 pi 现状 | 这是最需要你拍板的一条（§8-2） |
 | nginx | `location ^~ /pi/` + `limit_req zone=pi rate=5r/s burst=20` + `client_max_body_size 20M`（照片）+ `proxy_read_timeout 300s`（WS 长连）+ 不进静态缓存 location | ⚠️ `cron 30 3,9,14 * * * systemctl restart runtime-nginx` 会切断 12 台执行器 wss（实测 5~7s 自动重连）→ 改配置手动 reload 并避开 03:30/09:30/14:30 |
@@ -195,7 +195,7 @@ P0 的改动面已经覆盖 100% 的基础设施风险，后面每期只加交�
 ## 9. 备选/放弃项（记录理由，免得以后重新讨论）
 
 - **语音**：手机输入法自带语音转文字（微信/iOS/搜狗都行）→ 直接转成文本进 composer，**不需要 whisper**；若要 agent 听语音条，再加本地 whisper.cpp，属 P4。
-- **直接用 OpenClaw 的 Control UI**：功能最全（配对/scope/approvals/PiP/命令面板都有），但你的 skills、扩展、pi Browser Assistant、学习模式记忆、阿里云发布 skill 全在 pi 上，换宿主 = 重建全部资产。已把它文档里的客户端契约（scope 分层、activeRunIds、审批回填、Ed25519 设备配对）当作本设计的蓝本。
+- **直接用 OpenClaw 的 Control UI**：功能最全（配对/scope/approvals/PiP/命令面板都有），但你的 skills、扩展、pi Browser Assistant、学习模式记忆、云端发布 skill 全在 pi 上，换宿主 = 重建全部资产。已把它文档里的客户端契约（scope 分层、activeRunIds、审批回填、Ed25519 设备配对）当作本设计的蓝本。
 - **Tailscale / frp 的 direct 模式暴露 pi 端口**：多一层客户端安装与运维；本方案手机只用 443，够用。
 - **在 task_center 里直接跑 agent**：task_center 是 Java/Spring，pi 是 Node 生态，混在一个进程只会互相拖累。
 
@@ -203,8 +203,8 @@ P0 的改动面已经覆盖 100% 的基础设施风险，后面每期只加交�
 
 ## 10. 关键事实清单（复核用）
 
-- frps：`<服务器根>/frps/frps.toml` = `bindPort=<frps 端口>` + `auth.method="token"`（无端口白名单）；`frps.service` active；`ss -lntp` 现有 `<frps 端口> 33389 33333 33334 33335`。
-- frpc：`<本机工具根>\gofrpc\frpc.toml` 已 4 条隧道（RDP 3389→33389、openwebui 3000→33333、comfyui 8188→33334、dify 8717→33335），WinSW 服务模板同目录。
+- frps：`<服务器根>/frps/frps.toml` = `bindPort=<frps 端口>` + `auth.method="token"`（无端口白名单）；`frps.service` active；`ss -lntp` 上是 `<frps 端口>` 加各条隧道的 remotePort（具体清单只在不入库的 `OPERATIONS.local.md`）。
+- frpc：`<本机工具根>\gofrpc\frpc.toml` 已有若干条隧道（服务名与端口只在 `frpc.toml` 与不入库的 `OPERATIONS.local.md` 里，仓库不写），WinSW 服务模板同目录。
 - nginx：`<服务器根>/runtime/nginx/sites-enabled/`（多个站点短名，各自一份 conf），443 由 `runtime-nginx.service` 一个 master 承载全部 vhost；`<UI域名>.conf` 里 `/api/ → 127.0.0.1:8888/`；证书 SAN = `<域名>, <泛域名>`。
 - 服务器公网 IP = frpc `serverAddr`（在 `<本机工具根>/gofrpc/frpc.toml` 第 1 行；公开仓库里不写死），SSH 免密 `<SSH 目标>`。
 - 企业微信：`corpId` / `agentId` 见 `task_center/config/QyWeixin.java`（公开仓库不写死），通讯录 userid 见企业微信后台；`TextCard(touser,...)` 第 1 参即通知对象。

@@ -115,13 +115,19 @@ if ($SelfTest) {
     # 只在临时副本上跑删段逻辑：不碰真文件、不重启服务
     $tmp = Join-Path ([IO.Path]::GetTempPath()) 'frpc-selftest.toml'
     Copy-Item $FrpcToml $tmp -Force
+    $before = Get-Content $FrpcToml -Raw
     [void](Strip-FrpcSection $tmp)
     $txt = Get-Content $tmp -Raw
     Remove-Item $tmp -Force
+    # 段名从文件里现读，不写死端口（端口属于不入库的本机信息）：pi-gateway 段应该消失，其它段一条不少
+    $sectionRe = '(?m)^\s*name\s*=\s*"([^"]+)"'
+    $namesBefore = @([regex]::Matches($before, $sectionRe) | ForEach-Object { $_.Groups[1].Value })
+    $namesAfter = @([regex]::Matches($txt, $sectionRe) | ForEach-Object { $_.Groups[1].Value })
     $gone = -not ($txt -match '(?m)^\s*name\s*=\s*"pi-gateway"')
-    $others = ($txt -match 'serverAddr') -and ($txt -match '33333') -and ($txt -match '33334') -and ($txt -match '33335') -and ($txt -match '33389')
+    $vanishedOthers = @($namesBefore | Where-Object { $_ -ne 'pi-gateway' -and $namesAfter -notcontains $_ }).Count
+    $others = ($vanishedOthers -eq 0) -and ($namesAfter.Count -eq ($namesBefore.Count - 1))
     $noLeft = -not ($txt -match '33336')
-    Say "[selftest] pi-gateway 段已删=$gone 其它隧道完好=$others 无 33336 残留=$noLeft"
+    Say "[selftest] pi-gateway 段已删=$gone 其它隧道完好=$others（段数 $($namesBefore.Count) -> $($namesAfter.Count)）无 33336 残留=$noLeft"
     if ($gone -and $others -and $noLeft) { Say '[selftest] PASS'; exit 0 } else { Say '[selftest] FAIL'; exit 1 }
 }
 
@@ -142,7 +148,7 @@ if (Do 'service') {
 
 # ---------- 2. frp 隧道 ----------
 if (Do 'frpc') {
-    Say '[frpc] 去掉 gofrpc 里的 pi-gateway 隧道段（33336），只删这一段，其它隧道（33333/33334/33335/33389）不受影响'
+    Say '[frpc] 去掉 gofrpc 里的 pi-gateway 隧道段（33336），只删这一段，其它隧道不受影响（先用 -SelfTest 在副本上数一遍段名）'
     Run '改 frpc.toml' {
         if (-not (Test-Path $FrpcToml)) { throw "找不到 $FrpcToml" }
         $bak = "$FrpcToml.bak-rollback-$(Get-Date -Format yyyyMMdd-HHmmss)"

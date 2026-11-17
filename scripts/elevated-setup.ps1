@@ -46,7 +46,7 @@ if (-not $ok) {
     L 'RESTORED_MANUAL'
 }
 
-# 4) frpc 隧道（会把 RDP 隧道 33389 断几秒）
+# 4) frpc 隧道（会把远程桌面那条隧道断几秒）
 try {
     Restart-Service remote-desktop -Force
     L 'remote-desktop restarted'
