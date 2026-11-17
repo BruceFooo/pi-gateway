@@ -40,7 +40,7 @@ esac
 CSS=$(basename "$(ls dist/assets/admin-*.css | head -1)")
 JS=$(basename "$(ls dist/assets/admin-*.js | head -1)")
 STAMP=$(date +%Y%m%d-%H%M%S)
-RS=/tmp/<中性名>-$STAMP
+RS=/tmp/ui-deploy-$STAMP
 TAR=/tmp/ui-dist-$STAMP.tar.gz
 tar -czf "$TAR" -C dist .
 echo "产物：$CSS / $JS，包 $(du -h "$TAR" | cut -f1)"
