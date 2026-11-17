@@ -240,7 +240,7 @@ P0 的改动面已经覆盖 100% 的基础设施风险，后面每期只加交�
   （清单缺失或占位值时退回“从 PATH 上的 node.exe 反推”），并显式 `USERPROFILE=<用户主目录>`
   （pi 凭据与 `~/.pi/agent/sessions/` 靠它）；环境变了就重跑生成脚本 + reinstall。
   非交互会话里 `Restart-Service` 不可用 ⇒ `sc.exe stop/start`。
-- 发布走技能 `aliyun-<中性名>`（**必须 pwsh7**）。发现脚本 bug：`tar` 命中 Git for Windows 的
+- 发布走技能 `aliyun-taskcenter-deploy`（**必须 pwsh7**）。发现脚本 bug：`tar` 命中 Git for Windows 的
   GNU tar 1.35，报 `tar (child): Cannot connect to C: resolve failed` ⇒ 已改成 `$env:SystemRoot\System32\tar.exe`（bsdtar）。
 - 本机 HTML 页面发布（2026-11-16 新增，协议与运维细节在 README「本机 HTML 页面发布」节）：
   模型在回复末行输出 `[[PI_PAGE:<绝对路径>|标题]]`（`src/markers.mjs` 的 `findPageMarker`，
