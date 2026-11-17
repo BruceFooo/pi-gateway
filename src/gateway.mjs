@@ -75,6 +75,16 @@ export class Gateway {
 			onFailed: (item, err) => void this.#notify('任务启动失败', `${item.title}\n${err?.message ?? err}`),
 		});
 
+		// 队列一变（入队 / 删除 / 清空 / 定时任务改动）就立刻推给前端。
+		// 之前只有 onStarted/onCompleted 两个钩子会发 QueueUpdate，而 RunQueue.enqueue()
+		// 自己发的 queue_changed 没人监听 ⇒ 手机端提交新任务后 chip 不变、「队列」tab 也是空的，
+		// 要等这一项真的开跑（或者重连拿 Ready 里的 state）才看得到。
+		this.queue.on((evt) => {
+			if (evt?.type !== 'queue_changed') return;
+			this.#emit(GW_EVENT.QueueUpdate, { items: evt.items ?? [], running: evt.running ?? null, crons: this.queue.cronList() });
+			this.#emit(GW_EVENT.State, { state: this.clientState() });
+		});
+
 		this.#loadBinding();
 	}
 
@@ -736,6 +746,8 @@ export class Gateway {
 
 	#onRunStarted(item) {
 		this.#emit(GW_EVENT.QueueUpdate, { items: this.queue.list(), running: this.queue.runningItem(), crons: this.queue.cronList() });
+		// 开跑也要推 state：chip 的「运行中」看的是 runState，光有 QueueUpdate 只动队列 tab。
+		this.#emit(GW_EVENT.State, { state: this.clientState() });
 		this.#emit(GW_EVENT.Notice, { level: 'info', text: `开始执行：${item.title}` });
 	}
 
