@@ -7,3 +7,5 @@ config/config.json
 service/*.exe
 scripts/pi-token.txt
 pages/
+# nginx 站点配置副本：含真实域名、证书路径、线上日志路径，只留本机
+nginx/
